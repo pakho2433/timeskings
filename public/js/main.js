@@ -11,30 +11,13 @@
   let completedPlayers = new Set(); // 本關已過關的玩家 ID
   let positionThrottle = 0;        // 位置更新節流
 
-  // ── 初始化 Three.js 場景 ──────────────────────────────
-  const canvas = document.getElementById('game-canvas');
-  Game.init(canvas, {
-    onCorrectAnswer: handleCorrectAnswer,
-    onWrongAnswer: handleWrongAnswer,
-    onPositionUpdate: handlePositionUpdate,
-  });
-
-  // ── 初始化 UI ──────────────────────────────────────────
+  // ── 先初始化 UI，避免 3D／網絡錯誤令按鈕完全失效 ────────
   UI.initLobby(
     (name) => createRoom(name),
     (name, code) => joinRoom(name, code)
   );
 
-  // ── 連線到伺服器 ──────────────────────────────────────
-  try {
-    await Network.connect();
-  } catch (e) {
-    UI.showToast('無法連線到伺服器，請重新整理', '❌', 5000);
-    return;
-  }
-
-  // ── WebSocket 訊息處理 ────────────────────────────────
-
+  // ── WebSocket 訊息處理（必須在 connect 前註冊）──────────
   Network.on('CONNECTED', (msg) => {
     localPlayerId = msg.playerId;
     console.log('[Main] 已取得 playerId:', localPlayerId);
@@ -85,15 +68,11 @@
 
   Network.on('LEVEL_START', (msg) => {
     completedPlayers = new Set();
-
-    // 若還在大廳/等候室，切換到遊戲畫面
     currentRoom = msg.roomInfo;
     const players = msg.roomInfo.players;
 
-    // 初始化玩家場景物件（第一關時建立）
     if (msg.level === 1) {
       Game.setupPlayers(players, localPlayerId);
-      // 初始化觸控控制
       Controls.init(() => Game.jump());
     }
 
@@ -102,7 +81,6 @@
     UI.updateQuestion(msg.level, msg.levelData.question.a, msg.levelData.question.b);
     UI.updatePlayerStatus(players, completedPlayers, localPlayerId);
 
-    // 若不是第一關，顯示「下一關！」提示
     if (msg.level > 1) {
       UI.showToast(`第 ${msg.level} 關！`, '🎯', 1500);
     }
@@ -134,7 +112,6 @@
       if (p) UI.showToast(`${p.name} 答對了！`, '⭐', 1200);
     }
 
-    // 若本玩家已完成但還有人未完成，顯示等待
     if (completedPlayers.has(localPlayerId) && msg.completedCount < msg.totalPlayers) {
       UI.showWaiting(msg.completedCount, msg.totalPlayers);
     }
@@ -149,28 +126,67 @@
     UI.showToast('與伺服器斷線，嘗試重連...', '📡', 3000);
   });
 
-  Network.on('RECONNECTED', () => {
+  Network.on('RECONNECTED', (msg) => {
+    localPlayerId = msg.playerId || Network.getPlayerId();
     UI.showToast('已重新連線！', '✅', 2000);
   });
 
-  // ── 動作函式 ──────────────────────────────────────────
+  // ── 初始化 Three.js 場景 ──────────────────────────────
+  if (typeof THREE === 'undefined') {
+    UI.showToast('3D 引擎載入失敗，請重新整理頁面', '❌', 6000);
+    return;
+  }
 
+  try {
+    const canvas = document.getElementById('game-canvas');
+    Game.init(canvas, {
+      onCorrectAnswer: handleCorrectAnswer,
+      onWrongAnswer: handleWrongAnswer,
+      onPositionUpdate: handlePositionUpdate,
+    });
+  } catch (e) {
+    console.error('[Main] 3D 場景初始化失敗', e);
+    UI.showToast('3D 畫面啟動失敗，請重新整理頁面', '❌', 6000);
+    return;
+  }
+
+  // ── 連線到伺服器 ──────────────────────────────────────
+  try {
+    await Network.connect();
+    localPlayerId = Network.getPlayerId();
+    console.log('[Main] 伺服器連線完成:', localPlayerId);
+  } catch (e) {
+    console.error('[Main] 無法連線到伺服器', e);
+    UI.showToast('無法連線到伺服器，請重新整理', '❌', 5000);
+  }
+
+  // ── 動作函式 ──────────────────────────────────────────
   function createRoom(name) {
     localPlayerName = name || '玩家';
-    Network.send('CREATE_ROOM', { playerName: localPlayerName });
+    const sent = Network.send('CREATE_ROOM', { playerName: localPlayerName });
+    if (!sent) {
+      UI.showToast('伺服器仍在連線，請稍候再試', '📡', 2500);
+    }
   }
 
   function joinRoom(name, code) {
     localPlayerName = name || '玩家';
-    Network.send('JOIN_ROOM', { playerName: localPlayerName, roomCode: code });
+    const sent = Network.send('JOIN_ROOM', {
+      playerName: localPlayerName,
+      roomCode: code,
+    });
+    if (!sent) {
+      UI.showToast('伺服器仍在連線，請稍候再試', '📡', 2500);
+    }
   }
 
   function startGame() {
-    Network.send('START_GAME');
+    if (!Network.send('START_GAME')) {
+      UI.showToast('伺服器連線中斷，請重新整理', '📡', 2500);
+    }
   }
 
   function leaveRoom() {
-    // WebSocket 關閉觸發伺服器端離開邏輯
     location.reload();
   }
 
