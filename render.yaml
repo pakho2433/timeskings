@@ -6,7 +6,7 @@ services:
     region: singapore
     buildCommand: npm install --omit=dev
     startCommand: npm start
-    healthCheckPath: /health
+    healthCheckPath: /
     autoDeployTrigger: commit
     maxShutdownDelaySeconds: 30
     envVars:
