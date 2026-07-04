@@ -6,27 +6,26 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>乘法王對戰 Times King Battle</title>
-  <link rel="stylesheet" href="css/style.css?v=4" />
-  <link rel="stylesheet" href="css/answer-choices.css?v=1" />
+  <title>熊仔乘法跑酷 Times King Bear Race</title>
+  <link rel="stylesheet" href="css/style.css?v=7" />
 </head>
 <body>
 <div id="app">
   <canvas id="game-canvas"></canvas>
 
   <div id="lobby-screen">
-    <div class="lobby-title">👑 乘法王對戰</div>
-    <div class="lobby-subtitle">Times King Battle · 3D 多人乘法競速</div>
+    <div class="lobby-title">🐻 熊仔乘法跑酷</div>
+    <div class="lobby-subtitle">Times King Bear Race · 10 關多人競速</div>
 
     <div class="lobby-card">
-      <h2>⚔️ 加入對戰</h2>
+      <h2>🏁 加入熊仔比賽</h2>
 
       <div class="input-group">
         <label>你的名字</label>
         <input id="player-name-input" type="text" maxlength="12" placeholder="輸入暱稱（最多12字）" />
       </div>
 
-      <button id="btn-create-room" class="btn btn-primary">🏟️ 建立對戰房間</button>
+      <button id="btn-create-room" class="btn btn-primary">🏟️ 建立比賽房間</button>
 
       <div class="divider">── 或 ──</div>
 
@@ -35,18 +34,18 @@
         <input id="room-code-input" type="text" maxlength="6" placeholder="輸入 5 碼代碼" style="text-transform:uppercase;letter-spacing:0.15em;" />
       </div>
 
-      <button id="btn-join-room" class="btn btn-secondary">⚔️ 加入對戰</button>
+      <button id="btn-join-room" class="btn btn-secondary">🐻 加入比賽</button>
     </div>
   </div>
 
   <div id="room-screen" style="display:none;">
     <div class="room-card">
       <div class="room-code-display">
-        <div class="label">房間代碼（分享給對手）</div>
+        <div class="label">房間代碼（分享給其他玩家）</div>
         <div class="code" id="room-code-value">-----</div>
       </div>
 
-      <div class="room-status" id="room-player-count">1 / 4 位玩家準備對戰</div>
+      <div class="room-status" id="room-player-count">1 / 4 隻熊仔準備起跑</div>
 
       <div class="player-slots">
         <div class="player-slot empty" data-slot="0"><div class="slot-icon"></div><div class="slot-name">等待加入...</div></div>
@@ -56,52 +55,51 @@
       </div>
 
       <div class="room-status" style="line-height:1.65; margin-top:-0.4em;">
-        🥇 100分　🥈 70分　🥉 50分　4️⃣ 30分<br />
-        答錯一次扣 10 分；10 關後最高分勝出
+        每關有 3 個答案平台，只有 1 個正確<br />
+        踩錯會塌台，返回該關起點重試；最快完成 10 關並衝線者勝出
       </div>
 
-      <button id="btn-start-game" class="btn btn-success">▶ 開始對戰！</button>
+      <button id="btn-start-game" class="btn btn-success">▶ 開始熊仔跑酷！</button>
       <button id="btn-leave-room" class="btn btn-danger" style="margin-top:0.6em;">← 離開房間</button>
     </div>
   </div>
 
   <div id="game-hud" style="display:none;">
     <div id="question-display">
-      <div class="level-tag">對戰第 1 / 10 關</div>
+      <div class="level-tag">第 1 / 10 關</div>
       <div class="question-text">? × ? = ?</div>
     </div>
 
-    <div id="answer-choices" aria-label="答案選項"></div>
     <div id="player-status-bar"></div>
 
     <div id="waiting-banner">
-      <p>等待其他玩家完成本關...</p>
+      <p>等待其他熊仔完成...</p>
     </div>
   </div>
 
   <div id="controls-overlay" style="display:none;">
     <div id="joystick-outer"><div id="joystick-inner"></div></div>
-    <div id="jump-btn">🦘</div>
+    <div id="jump-btn">⬆️</div>
   </div>
 
   <div id="complete-screen" style="display:none;">
     <div class="complete-card">
-      <div class="complete-emoji">🏆</div>
-      <div class="complete-title" id="complete-title">對戰完成！</div>
+      <div class="complete-emoji">🏆🐻</div>
+      <div class="complete-title" id="complete-title">比賽完成！</div>
 
       <div class="complete-stats" id="battle-leaderboard"></div>
 
       <div class="complete-stats">
         <div class="stat-row">
-          <span class="stat-label">⏱ 對戰時間</span>
+          <span class="stat-label">⏱ 全場時間</span>
           <span class="stat-value" id="stat-time">--:--</span>
         </div>
         <div class="stat-row">
-          <span class="stat-label">💨 全場答錯</span>
+          <span class="stat-label">💥 你的跌落次數</span>
           <span class="stat-value" id="stat-miss">-- 次</span>
         </div>
       </div>
-      <button id="btn-play-again" class="btn btn-primary">🔄 再戰一場</button>
+      <button id="btn-play-again" class="btn btn-primary">🔄 再跑一次</button>
     </div>
   </div>
 
@@ -114,10 +112,10 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');
   }
 </script>
-<script src="js/network.js?v=4"></script>
-<script src="js/controls.js?v=4"></script>
-<script src="js/ui.js?v=4"></script>
-<script src="js/game.js?v=4"></script>
-<script src="js/main.js?v=4"></script>
+<script src="js/network.js?v=7"></script>
+<script src="js/controls.js?v=7"></script>
+<script src="js/ui.js?v=7"></script>
+<script src="js/game.js?v=7"></script>
+<script src="js/main.js?v=7"></script>
 </body>
 </html>
