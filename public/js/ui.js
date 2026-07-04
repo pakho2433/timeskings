@@ -1,6 +1,6 @@
 /**
  * ui.js
- * UI 管理：大廳、等候室、對戰 HUD、排行榜與結算畫面
+ * UI 管理：大廳、等候室、對戰 HUD、答案按鈕、排行榜與結算畫面
  */
 
 const UI = (() => {
@@ -12,6 +12,7 @@ const UI = (() => {
   };
 
   let toastTimer = null;
+  let answerLocked = false;
 
   function showScreen(name) {
     Object.entries(screens).forEach(([key, el]) => {
@@ -99,6 +100,59 @@ const UI = (() => {
     if (questionText) questionText.textContent = `${a} × ${b} = ?`;
   }
 
+  function showAnswerChoices(options, onSelect) {
+    const container = document.getElementById('answer-choices');
+    if (!container) return;
+
+    answerLocked = false;
+    container.innerHTML = '';
+    container.style.display = 'grid';
+
+    (options || []).forEach((value, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'answer-choice-btn';
+      button.textContent = String(value);
+      button.dataset.index = String(index);
+      button.setAttribute('aria-label', `答案 ${value}`);
+      button.addEventListener('click', () => {
+        if (answerLocked || button.disabled) return;
+        onSelect(index);
+      });
+      container.appendChild(button);
+    });
+  }
+
+  function markAnswerChoice(index, isCorrect) {
+    const button = document.querySelector(`#answer-choices .answer-choice-btn[data-index="${index}"]`);
+    if (!button) return;
+
+    if (isCorrect) {
+      button.classList.add('correct');
+      lockAnswerChoices(index);
+    } else {
+      button.classList.add('wrong');
+      button.disabled = true;
+    }
+  }
+
+  function lockAnswerChoices(correctIndex = null) {
+    answerLocked = true;
+    const buttons = document.querySelectorAll('#answer-choices .answer-choice-btn');
+    buttons.forEach((button) => {
+      button.disabled = true;
+      if (correctIndex !== null && Number(button.dataset.index) === Number(correctIndex)) {
+        button.classList.add('correct');
+      }
+    });
+  }
+
+  function hideAnswerChoices() {
+    const container = document.getElementById('answer-choices');
+    if (container) container.style.display = 'none';
+    answerLocked = true;
+  }
+
   function updatePlayerStatus(players, completedSet, localPlayerId) {
     const bar = document.getElementById('player-status-bar');
     if (!bar) return;
@@ -155,6 +209,7 @@ const UI = (() => {
   }
 
   function showComplete(totalTime, missCount, leaderboard, localPlayerId) {
+    hideAnswerChoices();
     showScreen('complete');
     screens.complete.style.display = 'flex';
 
@@ -238,6 +293,10 @@ const UI = (() => {
     updateRoomUI,
     showGameHud,
     updateQuestion,
+    showAnswerChoices,
+    markAnswerChoice,
+    lockAnswerChoices,
+    hideAnswerChoices,
     updatePlayerStatus,
     showWaiting,
     hideWaiting,
