@@ -4,20 +4,17 @@
  */
 
 (async function () {
-  // ── 狀態 ──────────────────────────────────────────────
   let localPlayerId = null;
   let localPlayerName = '玩家';
   let currentRoom = null;
-  let completedPlayers = new Set(); // 本關已過關的玩家 ID
-  let positionThrottle = 0;        // 位置更新節流
+  let completedPlayers = new Set();
+  let positionThrottle = 0;
 
-  // ── 先初始化 UI，避免 3D／網絡錯誤令按鈕完全失效 ────────
   UI.initLobby(
     (name) => createRoom(name),
     (name, code) => joinRoom(name, code)
   );
 
-  // ── WebSocket 訊息處理（必須在 connect 前註冊）──────────
   Network.on('CONNECTED', (msg) => {
     localPlayerId = msg.playerId;
     console.log('[Main] 已取得 playerId:', localPlayerId);
@@ -26,30 +23,20 @@
   Network.on('ROOM_CREATED', (msg) => {
     localPlayerName = msg.player.name;
     currentRoom = msg.roomInfo;
-    UI.showRoom(
-      msg.roomInfo,
-      localPlayerId,
-      () => startGame(),
-      () => leaveRoom()
-    );
+    UI.showRoom(msg.roomInfo, localPlayerId, () => startGame(), () => leaveRoom());
   });
 
   Network.on('ROOM_JOINED', (msg) => {
     localPlayerName = msg.player.name;
     currentRoom = msg.roomInfo;
-    UI.showRoom(
-      msg.roomInfo,
-      localPlayerId,
-      () => startGame(),
-      () => leaveRoom()
-    );
+    UI.showRoom(msg.roomInfo, localPlayerId, () => startGame(), () => leaveRoom());
   });
 
   Network.on('JOIN_FAILED', (msg) => {
     const errMap = {
       ROOM_NOT_FOUND: '找不到此房間代碼！',
       ROOM_FULL: '房間已滿（最多 4 人）！',
-      GAME_ALREADY_STARTED: '遊戲已開始，無法加入！',
+      GAME_ALREADY_STARTED: '對戰已開始或已結束，無法加入！',
     };
     UI.showToast(errMap[msg.error] || '加入失敗', '❌');
   });
@@ -57,13 +44,14 @@
   Network.on('PLAYER_JOINED', (msg) => {
     currentRoom = msg.roomInfo;
     UI.updateRoomUI(msg.roomInfo, localPlayerId);
-    UI.showToast(`${msg.player.name} 加入了房間！`, '👋');
+    UI.showToast(`${msg.player.name} 加入對戰！`, '⚔️');
   });
 
   Network.on('PLAYER_LEFT', (msg) => {
     currentRoom = msg.roomInfo;
     UI.updateRoomUI(msg.roomInfo, localPlayerId);
-    UI.showToast(`${msg.playerName} 離開了房間`, '👋');
+    UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
+    UI.showToast(`${msg.playerName} 離開了對戰`, '👋');
   });
 
   Network.on('LEVEL_START', (msg) => {
@@ -81,10 +69,7 @@
     UI.updateQuestion(msg.level, msg.levelData.question.a, msg.levelData.question.b);
     UI.updatePlayerStatus(players, completedPlayers, localPlayerId);
 
-    if (msg.level > 1) {
-      UI.showToast(`第 ${msg.level} 關！`, '🎯', 1500);
-    }
-
+    UI.showToast(msg.level === 1 ? '對戰開始！搶先答對得高分！' : `第 ${msg.level} 關！`, '⚔️', 1600);
     Game.loadLevel(msg.levelData, players, localPlayerId);
     Game.setGameActive(true);
   });
@@ -96,30 +81,39 @@
   });
 
   Network.on('PLAYER_MISS', (msg) => {
+    currentRoom = msg.roomInfo;
+    UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
+
     if (msg.playerId === localPlayerId) {
-      UI.showToast('踩空了！再試一次！', '💨', 1200);
+      UI.showToast(`答錯！-${msg.penalty} 分，再試一次！`, '💨', 1400);
+    } else {
+      const player = msg.roomInfo.players.find((p) => p.id === msg.playerId);
+      if (player) UI.showToast(`${player.name} 答錯了！`, '💥', 900);
     }
   });
 
   Network.on('PLAYER_COMPLETED', (msg) => {
+    currentRoom = msg.roomInfo;
     completedPlayers = new Set(
       msg.roomInfo.players.filter((p) => p.hasCompleted).map((p) => p.id)
     );
     UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
 
-    if (msg.playerId !== localPlayerId) {
-      const p = msg.roomInfo.players.find((pl) => pl.id === msg.playerId);
-      if (p) UI.showToast(`${p.name} 答對了！`, '⭐', 1200);
+    const player = msg.roomInfo.players.find((p) => p.id === msg.playerId);
+    if (msg.playerId === localPlayerId) {
+      UI.showToast(`本關第 ${msg.placement} 名，+${msg.points} 分！`, '🏁', 1800);
+    } else if (player) {
+      UI.showToast(`${player.name} 第 ${msg.placement} 名答對，+${msg.points} 分`, '⭐', 1300);
     }
 
     if (completedPlayers.has(localPlayerId) && msg.completedCount < msg.totalPlayers) {
-      UI.showWaiting(msg.completedCount, msg.totalPlayers);
+      UI.showWaiting(msg.completedCount, msg.totalPlayers, msg.placement, msg.points);
     }
   });
 
   Network.on('GAME_COMPLETED', (msg) => {
     Game.setGameActive(false);
-    UI.showComplete(msg.totalTime, msg.missCount);
+    UI.showComplete(msg.totalTime, msg.missCount, msg.leaderboard, localPlayerId);
   });
 
   Network.on('DISCONNECTED', () => {
@@ -131,7 +125,6 @@
     UI.showToast('已重新連線！', '✅', 2000);
   });
 
-  // ── 初始化 Three.js 場景 ──────────────────────────────
   if (typeof THREE === 'undefined') {
     UI.showToast('3D 引擎載入失敗，請重新整理頁面', '❌', 6000);
     return;
@@ -150,7 +143,6 @@
     return;
   }
 
-  // ── 連線到伺服器 ──────────────────────────────────────
   try {
     await Network.connect();
     localPlayerId = Network.getPlayerId();
@@ -160,22 +152,16 @@
     UI.showToast('無法連線到伺服器，請重新整理', '❌', 5000);
   }
 
-  // ── 動作函式 ──────────────────────────────────────────
   function createRoom(name) {
     localPlayerName = name || '玩家';
-    const sent = Network.send('CREATE_ROOM', { playerName: localPlayerName });
-    if (!sent) {
+    if (!Network.send('CREATE_ROOM', { playerName: localPlayerName })) {
       UI.showToast('伺服器仍在連線，請稍候再試', '📡', 2500);
     }
   }
 
   function joinRoom(name, code) {
     localPlayerName = name || '玩家';
-    const sent = Network.send('JOIN_ROOM', {
-      playerName: localPlayerName,
-      roomCode: code,
-    });
-    if (!sent) {
+    if (!Network.send('JOIN_ROOM', { playerName: localPlayerName, roomCode: code })) {
       UI.showToast('伺服器仍在連線，請稍候再試', '📡', 2500);
     }
   }
@@ -191,7 +177,6 @@
   }
 
   function handleCorrectAnswer() {
-    UI.showToast('答對了！🎉', '✅', 1500);
     Network.send('CORRECT_ANSWER');
   }
 
@@ -199,7 +184,6 @@
     Network.send('WRONG_ANSWER');
   }
 
-  // 位置更新節流（每 50ms 最多一次）
   function handlePositionUpdate(position) {
     const now = Date.now();
     if (now - positionThrottle < 50) return;

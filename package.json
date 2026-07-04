@@ -1,11 +1,12 @@
 {
   "name": "timeskings",
   "version": "1.0.0",
-  "description": "乘法王 (Times King) - 3D 卡通風格多人答題跳躍遊戲",
+  "description": "乘法王對戰 (Times King Battle) - 3D 多人乘法競速遊戲",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "nodemon server/server.js"
+    "dev": "nodemon server/server.js",
+    "test": "node tests/gameLogic.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",

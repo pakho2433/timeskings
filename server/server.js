@@ -1,48 +1,47 @@
 /**
  * server.js
  * Node.js + Express + WebSocket 伺服器
- * 負責房間管理與遊戲狀態同步
+ * 負責房間管理、多人位置同步與對戰計分
  */
 
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { createRoom, joinRoom, leaveRoom, getRoomByPlayerId, getRoomInfo } = require('./roomManager');
-const { generateLevel, TOTAL_LEVELS } = require('./gameLogic');
+const {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  getRoomByPlayerId,
+  getRoomInfo,
+} = require('./roomManager');
+const {
+  generateLevel,
+  getPlacementPoints,
+  buildLeaderboard,
+  TOTAL_LEVELS,
+  WRONG_ANSWER_PENALTY,
+} = require('./gameLogic');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
 const PORT = process.env.PORT || 3000;
 
-// 靜態檔案服務
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 玩家 ID 計數器
 let playerIdCounter = 0;
-
-// playerId -> WebSocket
 const playerSockets = new Map();
 
-/**
- * 向房間內所有玩家廣播訊息
- */
 function broadcastToRoom(room, message, excludeId = null) {
   const data = JSON.stringify(message);
-  for (const [pid, player] of room.players) {
+  for (const [pid] of room.players) {
     if (pid === excludeId) continue;
     const ws = playerSockets.get(pid);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-    }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
   }
 }
 
-/**
- * 傳送訊息給特定玩家
- */
 function sendToPlayer(playerId, message) {
   const ws = playerSockets.get(playerId);
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -50,17 +49,17 @@ function sendToPlayer(playerId, message) {
   }
 }
 
-/**
- * 開始新關卡
- */
 function startLevel(room) {
+  if (!room || room.gameState !== 'playing' || room.players.size === 0) return;
+
+  room.transitionScheduled = false;
   room.currentLevel++;
   room.completedPlayers = new Set();
   room.levelData = generateLevel(room.currentLevel);
 
-  // 重設所有玩家的完成狀態
   for (const player of room.players.values()) {
     player.hasCompleted = false;
+    player.lastPlacement = null;
   }
 
   broadcastToRoom(room, {
@@ -71,20 +70,43 @@ function startLevel(room) {
   });
 }
 
-/**
- * 檢查是否所有玩家都完成了當前關卡
- */
 function checkAllCompleted(room) {
   const activePlayers = [...room.players.keys()];
-  return activePlayers.every((pid) => room.completedPlayers.has(pid));
+  return activePlayers.length > 0 && activePlayers.every((pid) => room.completedPlayers.has(pid));
 }
 
-// WebSocket 連線處理
+function finishGame(room) {
+  if (!room || room.gameState !== 'playing') return;
+
+  room.gameState = 'finished';
+  room.transitionScheduled = false;
+  const elapsed = Math.floor((Date.now() - room.startTime) / 1000);
+  const leaderboard = buildLeaderboard(room.players.values());
+
+  broadcastToRoom(room, {
+    type: 'GAME_COMPLETED',
+    totalTime: elapsed,
+    missCount: room.missCount,
+    leaderboard,
+    winner: leaderboard[0] || null,
+  });
+}
+
+function completeRound(room) {
+  if (!room || room.transitionScheduled || !checkAllCompleted(room)) return;
+
+  if (room.currentLevel >= TOTAL_LEVELS) {
+    finishGame(room);
+    return;
+  }
+
+  room.transitionScheduled = true;
+  setTimeout(() => startLevel(room), 2000);
+}
+
 wss.on('connection', (ws) => {
   const playerId = `p${++playerIdCounter}`;
   playerSockets.set(playerId, ws);
-
-  // 送出玩家 ID
   ws.send(JSON.stringify({ type: 'CONNECTED', playerId }));
 
   ws.on('message', (rawData) => {
@@ -96,7 +118,6 @@ wss.on('connection', (ws) => {
     }
 
     switch (msg.type) {
-      // === 房間管理 ===
       case 'CREATE_ROOM': {
         const { room, player } = createRoom(playerId, msg.playerName);
         sendToPlayer(playerId, {
@@ -114,6 +135,7 @@ wss.on('connection', (ws) => {
           sendToPlayer(playerId, { type: 'JOIN_FAILED', error: result.error });
           break;
         }
+
         const { room, player } = result;
         sendToPlayer(playerId, {
           type: 'ROOM_JOINED',
@@ -121,7 +143,6 @@ wss.on('connection', (ws) => {
           player,
           roomInfo: getRoomInfo(room),
         });
-        // 通知房間其他玩家
         broadcastToRoom(room, {
           type: 'PLAYER_JOINED',
           player,
@@ -132,29 +153,35 @@ wss.on('connection', (ws) => {
 
       case 'START_GAME': {
         const room = getRoomByPlayerId(playerId);
-        if (!room || room.gameState !== 'waiting') break;
-        if (room.players.size < 1) break;
+        if (!room || room.gameState !== 'waiting' || room.players.size < 1) break;
 
         room.gameState = 'playing';
         room.startTime = Date.now();
         room.missCount = 0;
         room.currentLevel = 0;
+        room.transitionScheduled = false;
+
+        for (const player of room.players.values()) {
+          player.score = 0;
+          player.correctAnswers = 0;
+          player.wrongAnswers = 0;
+          player.hasCompleted = false;
+          player.lastPlacement = null;
+        }
 
         startLevel(room);
         break;
       }
 
-      // === 遊戲事件 ===
       case 'PLAYER_MOVE': {
         const room = getRoomByPlayerId(playerId);
         if (!room || room.gameState !== 'playing') break;
 
         const player = room.players.get(playerId);
-        if (player) {
+        if (player && msg.position && typeof msg.position === 'object') {
           player.position = msg.position;
         }
 
-        // 廣播位置給其他玩家
         broadcastToRoom(room, {
           type: 'PLAYER_MOVED',
           playerId,
@@ -168,11 +195,20 @@ wss.on('connection', (ws) => {
         const room = getRoomByPlayerId(playerId);
         if (!room || room.gameState !== 'playing') break;
 
+        const player = room.players.get(playerId);
+        if (!player || room.completedPlayers.has(playerId)) break;
+
         room.missCount++;
+        player.wrongAnswers++;
+        player.score = Math.max(0, player.score - WRONG_ANSWER_PENALTY);
+
         broadcastToRoom(room, {
           type: 'PLAYER_MISS',
           playerId,
+          penalty: WRONG_ANSWER_PENALTY,
+          score: player.score,
           missCount: room.missCount,
+          roomInfo: getRoomInfo(room),
         });
         break;
       }
@@ -184,33 +220,27 @@ wss.on('connection', (ws) => {
         const player = room.players.get(playerId);
         if (!player || room.completedPlayers.has(playerId)) break;
 
+        const placement = room.completedPlayers.size + 1;
+        const points = getPlacementPoints(placement);
+
         room.completedPlayers.add(playerId);
         player.hasCompleted = true;
+        player.lastPlacement = placement;
+        player.correctAnswers++;
+        player.score += points;
 
         broadcastToRoom(room, {
           type: 'PLAYER_COMPLETED',
           playerId,
+          placement,
+          points,
+          score: player.score,
           completedCount: room.completedPlayers.size,
           totalPlayers: room.players.size,
           roomInfo: getRoomInfo(room),
         });
 
-        // 檢查是否全員完成
-        if (checkAllCompleted(room)) {
-          if (room.currentLevel >= TOTAL_LEVELS) {
-            // 遊戲通關
-            room.gameState = 'finished';
-            const elapsed = Math.floor((Date.now() - room.startTime) / 1000);
-            broadcastToRoom(room, {
-              type: 'GAME_COMPLETED',
-              totalTime: elapsed,
-              missCount: room.missCount,
-            });
-          } else {
-            // 進入下一關（短暫延遲讓玩家看到動畫）
-            setTimeout(() => startLevel(room), 2000);
-          }
-        }
+        completeRound(room);
         break;
       }
 
@@ -238,20 +268,7 @@ wss.on('connection', (ws) => {
           roomInfo: getRoomInfo(room),
         });
 
-        // 若遊戲進行中，有玩家離線，重新檢查是否全員完成
-        if (room.gameState === 'playing' && checkAllCompleted(room)) {
-          if (room.currentLevel >= TOTAL_LEVELS) {
-            room.gameState = 'finished';
-            const elapsed = Math.floor((Date.now() - room.startTime) / 1000);
-            broadcastToRoom(room, {
-              type: 'GAME_COMPLETED',
-              totalTime: elapsed,
-              missCount: room.missCount,
-            });
-          } else {
-            setTimeout(() => startLevel(room), 2000);
-          }
-        }
+        if (room.gameState === 'playing') completeRound(room);
       }
     }
     playerSockets.delete(playerId);
@@ -263,5 +280,5 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`乘法王 伺服器啟動：http://localhost:${PORT}`);
+  console.log(`乘法王對戰伺服器啟動：http://localhost:${PORT}`);
 });
