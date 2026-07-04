@@ -1,0 +1,562 @@
+/* style.css - 乘法王 響應式樣式 */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1a2e;
+  font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  touch-action: none;
+}
+
+/* ===== 畫面層疊結構 ===== */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Three.js 渲染畫布 */
+#game-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ===== 大廳畫面 ===== */
+#lobby-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  z-index: 100;
+}
+
+.lobby-title {
+  font-size: clamp(2.2rem, 8vw, 4.5rem);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 20px #ffcc44, 0 4px 0 #b8860b;
+  letter-spacing: 2px;
+  margin-bottom: 0.3em;
+  text-align: center;
+}
+
+.lobby-subtitle {
+  font-size: clamp(0.9rem, 3vw, 1.3rem);
+  color: #aad4ff;
+  margin-bottom: 2.5em;
+  text-align: center;
+}
+
+.lobby-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  width: min(420px, 90vw);
+  backdrop-filter: blur(10px);
+}
+
+.lobby-card h2 {
+  color: #fff;
+  font-size: clamp(1rem, 3.5vw, 1.4rem);
+  margin-bottom: 1.2em;
+  text-align: center;
+}
+
+.input-group {
+  margin-bottom: 1em;
+}
+
+.input-group label {
+  display: block;
+  color: #aad4ff;
+  font-size: 0.9rem;
+  margin-bottom: 0.4em;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 0.75em 1em;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-size: clamp(1rem, 3vw, 1.1rem);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+  border-color: #ffcc44;
+}
+
+.input-group input::placeholder {
+  color: rgba(255,255,255,0.35);
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 0.85em;
+  border: none;
+  border-radius: 12px;
+  font-size: clamp(1rem, 3.5vw, 1.2rem);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  touch-action: manipulation;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ffcc44, #ff8c00);
+  color: #1a1a2e;
+  margin-bottom: 0.8em;
+  box-shadow: 0 4px 15px rgba(255, 200, 0, 0.4);
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #44aaff, #0066cc);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(68, 170, 255, 0.4);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #44ff88, #00aa44);
+  color: #1a1a2e;
+  box-shadow: 0 4px 15px rgba(68, 255, 136, 0.4);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ff6666, #cc0000);
+  color: #fff;
+}
+
+.divider {
+  text-align: center;
+  color: rgba(255,255,255,0.3);
+  margin: 1em 0;
+  font-size: 0.85rem;
+}
+
+/* ===== 等候室畫面 ===== */
+#room-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  z-index: 100;
+}
+
+.room-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  width: min(480px, 92vw);
+  backdrop-filter: blur(10px);
+}
+
+.room-code-display {
+  text-align: center;
+  margin-bottom: 1.5em;
+}
+
+.room-code-display .label {
+  color: #aad4ff;
+  font-size: 0.9rem;
+  margin-bottom: 0.3em;
+}
+
+.room-code-display .code {
+  font-size: clamp(2rem, 8vw, 3rem);
+  font-weight: 900;
+  color: #ffcc44;
+  letter-spacing: 0.15em;
+  text-shadow: 0 0 10px rgba(255,200,0,0.5);
+}
+
+.player-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8em;
+  margin-bottom: 1.5em;
+}
+
+.player-slot {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 0.8em;
+  text-align: center;
+  min-height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-slot .slot-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-bottom: 0.3em;
+}
+
+.player-slot .slot-name {
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.player-slot.empty .slot-name {
+  color: rgba(255,255,255,0.25);
+}
+
+.player-slot.empty .slot-icon {
+  background: rgba(255,255,255,0.1);
+}
+
+.room-status {
+  text-align: center;
+  color: #aad4ff;
+  font-size: 0.9rem;
+  margin-bottom: 1.2em;
+}
+
+/* ===== 遊戲 HUD ===== */
+#game-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  display: none;
+}
+
+/* 題目顯示 */
+#question-display {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 16px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid #ffcc44;
+  border-radius: 16px;
+  padding: 0.5em 1.2em;
+  text-align: center;
+  backdrop-filter: blur(4px);
+  min-width: 200px;
+}
+
+#question-display .level-tag {
+  color: #ffcc44;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#question-display .question-text {
+  color: #fff;
+  font-size: clamp(1.6rem, 6vw, 2.5rem);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+/* 玩家狀態列 */
+#player-status-bar {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 16px));
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player-status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.55);
+  border-radius: 20px;
+  padding: 4px 10px 4px 4px;
+}
+
+.player-status-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.player-status-name {
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-status-item.completed .player-status-dot::after {
+  content: '✓';
+}
+
+.player-status-item.completed {
+  opacity: 0.7;
+}
+
+/* 觸控控制區（pointer-events 需要開啟） */
+#controls-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none; /* 子元素自己開 */
+}
+
+/* 搖桿區域 */
+#joystick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 50%;
+  pointer-events: auto;
+}
+
+/* 搖桿視覺元件（由 controls.js 動態產生） */
+#joystick-outer {
+  position: absolute;
+  left: max(24px, env(safe-area-inset-left, 24px));
+  bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  width: clamp(100px, 22vw, 140px);
+  height: clamp(100px, 22vw, 140px);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  border: 2px solid rgba(255,255,255,0.3);
+  touch-action: none;
+  pointer-events: auto;
+}
+
+#joystick-inner {
+  position: absolute;
+  width: 44%;
+  height: 44%;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.55);
+  border: 2px solid rgba(255,255,255,0.8);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.05s;
+  pointer-events: none;
+}
+
+/* 跳躍按鈕 */
+#jump-btn {
+  position: absolute;
+  right: max(28px, env(safe-area-inset-right, 28px));
+  bottom: max(28px, env(safe-area-inset-bottom, 28px));
+  width: clamp(70px, 18vw, 100px);
+  height: clamp(70px, 18vw, 100px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff176, #ffcc44 60%, #ff8c00);
+  border: 3px solid #fff;
+  box-shadow: 0 4px 20px rgba(255,200,0,0.6), inset 0 2px 4px rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: transform 0.08s, box-shadow 0.08s;
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+}
+
+#jump-btn:active {
+  transform: scale(0.9);
+  box-shadow: 0 2px 8px rgba(255,200,0,0.4);
+}
+
+/* 等待提示 */
+#waiting-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.8);
+  border: 2px solid #44aaff;
+  border-radius: 16px;
+  padding: 1em 2em;
+  text-align: center;
+  pointer-events: none;
+  display: none;
+}
+
+#waiting-banner p {
+  color: #fff;
+  font-size: clamp(1rem, 3.5vw, 1.4rem);
+  font-weight: 700;
+}
+
+#waiting-banner .waiting-dots {
+  color: #44aaff;
+  font-size: 1.4rem;
+  animation: dots 1.2s infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: '.'; }
+  40% { content: '..'; }
+  60%, 100% { content: '...'; }
+}
+
+/* ===== 通知訊息 ===== */
+#toast {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  border-radius: 16px;
+  padding: 1em 2em;
+  font-size: clamp(1.1rem, 4vw, 1.6rem);
+  font-weight: 700;
+  text-align: center;
+  z-index: 200;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
+  opacity: 0;
+}
+
+#toast.show {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+/* ===== 通關畫面 ===== */
+#complete-screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  z-index: 150;
+}
+
+.complete-card {
+  background: rgba(255,255,255,0.08);
+  border: 2px solid #ffcc44;
+  border-radius: 24px;
+  padding: clamp(2rem, 6vw, 3.5rem);
+  width: min(420px, 90vw);
+  text-align: center;
+  backdrop-filter: blur(10px);
+  animation: pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop-in {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.complete-emoji {
+  font-size: clamp(3rem, 10vw, 5rem);
+  margin-bottom: 0.3em;
+}
+
+.complete-title {
+  color: #ffcc44;
+  font-size: clamp(1.5rem, 6vw, 2.5rem);
+  font-weight: 900;
+  text-shadow: 0 0 15px rgba(255,200,0,0.5);
+  margin-bottom: 0.5em;
+}
+
+.complete-stats {
+  margin: 1em 0 1.5em;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  color: #fff;
+  font-size: clamp(0.9rem, 3vw, 1.1rem);
+  padding: 0.4em 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.stat-row .stat-label { color: #aad4ff; }
+.stat-row .stat-value { font-weight: 700; color: #ffcc44; }
+
+/* ===== 橫向提示 ===== */
+#landscape-hint {
+  position: absolute;
+  inset: 0;
+  background: #1a1a2e;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+#landscape-hint p {
+  color: #fff;
+  font-size: 1.2rem;
+  margin-top: 1em;
+  text-align: center;
+}
+
+.rotate-icon {
+  font-size: 4rem;
+  animation: rotate-hint 2s infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+/* 在非常窄的直向螢幕上提示橫轉（可選） */
+@media (max-width: 480px) and (orientation: portrait) {
+  /* 可選：顯示橫轉提示，目前先不強制 */
+}
+
+/* ===== 輔助動畫 ===== */
+.pulse {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.hidden { display: none !important; }

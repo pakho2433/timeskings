@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>乘法王 Times King</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- Three.js 渲染畫布 -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===== 大廳畫面 ===== -->
+  <div id="lobby-screen">
+    <div class="lobby-title">👑 乘法王</div>
+    <div class="lobby-subtitle">Times King · 3D 卡通多人益智跳躍</div>
+
+    <div class="lobby-card">
+      <h2>🎮 開始遊戲</h2>
+
+      <div class="input-group">
+        <label>你的名字</label>
+        <input id="player-name-input" type="text" maxlength="12" placeholder="輸入暱稱（最多12字）" />
+      </div>
+
+      <button id="btn-create-room" class="btn btn-primary">🏠 建立新房間</button>
+
+      <div class="divider">── 或 ──</div>
+
+      <div class="input-group">
+        <label>房間代碼</label>
+        <input id="room-code-input" type="text" maxlength="6" placeholder="輸入 5 碼代碼" style="text-transform:uppercase;letter-spacing:0.15em;" />
+      </div>
+
+      <button id="btn-join-room" class="btn btn-secondary">🚪 加入房間</button>
+    </div>
+  </div>
+
+  <!-- ===== 等候室畫面 ===== -->
+  <div id="room-screen" style="display:none;">
+    <div class="room-card">
+      <div class="room-code-display">
+        <div class="label">房間代碼（分享給朋友）</div>
+        <div class="code" id="room-code-value">-----</div>
+      </div>
+
+      <div class="room-status" id="room-player-count">1 / 4 位玩家</div>
+
+      <div class="player-slots">
+        <div class="player-slot empty" data-slot="0">
+          <div class="slot-icon"></div>
+          <div class="slot-name">等待加入...</div>
+        </div>
+        <div class="player-slot empty" data-slot="1">
+          <div class="slot-icon"></div>
+          <div class="slot-name">等待加入...</div>
+        </div>
+        <div class="player-slot empty" data-slot="2">
+          <div class="slot-icon"></div>
+          <div class="slot-name">等待加入...</div>
+        </div>
+        <div class="player-slot empty" data-slot="3">
+          <div class="slot-icon"></div>
+          <div class="slot-name">等待加入...</div>
+        </div>
+      </div>
+
+      <button id="btn-start-game" class="btn btn-success">▶ 開始遊戲！</button>
+      <button id="btn-leave-room" class="btn btn-danger" style="margin-top:0.6em;">← 離開房間</button>
+    </div>
+  </div>
+
+  <!-- ===== 遊戲 HUD ===== -->
+  <div id="game-hud" style="display:none;">
+    <!-- 題目 -->
+    <div id="question-display">
+      <div class="level-tag">第 1 關</div>
+      <div class="question-text">? × ? = ?</div>
+    </div>
+
+    <!-- 玩家完成狀態列 -->
+    <div id="player-status-bar"></div>
+
+    <!-- 等待其他玩家 -->
+    <div id="waiting-banner">
+      <p>等待其他玩家過關...</p>
+    </div>
+  </div>
+
+  <!-- ===== 觸控控制層 ===== -->
+  <div id="controls-overlay" style="display:none;">
+    <!-- 搖桿 -->
+    <div id="joystick-outer">
+      <div id="joystick-inner"></div>
+    </div>
+
+    <!-- 跳躍按鈕 -->
+    <div id="jump-btn">🦘</div>
+  </div>
+
+  <!-- ===== 通關畫面 ===== -->
+  <div id="complete-screen" style="display:none;">
+    <div class="complete-card">
+      <div class="complete-emoji">🎉</div>
+      <div class="complete-title">恭喜通關！</div>
+      <div class="complete-stats">
+        <div class="stat-row">
+          <span class="stat-label">⏱ 完成時間</span>
+          <span class="stat-value" id="stat-time">--:--</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">💨 踩空次數</span>
+          <span class="stat-value" id="stat-miss">-- 次</span>
+        </div>
+      </div>
+      <button id="btn-play-again" class="btn btn-primary">🔄 再玩一次</button>
+    </div>
+  </div>
+
+  <!-- ===== Toast 通知 ===== -->
+  <div id="toast"></div>
+
+</div><!-- #app -->
+
+<!-- Three.js（CDN） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+        crossorigin="anonymous"></script>
+
+<!-- 遊戲腳本 -->
+<script src="js/network.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
