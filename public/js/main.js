@@ -1,136 +1,143 @@
 /**
  * main.js
- * 遊戲主控制器：連接 Network、UI、Game、Controls 各模組
+ * 熊仔乘法跑酷主控制器
  */
 
 (async function () {
   let localPlayerId = null;
   let localPlayerName = '玩家';
   let currentRoom = null;
-  let completedPlayers = new Set();
+  let courseData = [];
+  let localStage = 0;
   let positionThrottle = 0;
-  let currentCorrectIndex = null;
-  let answerSubmitted = false;
+  let controlsInitialized = false;
 
   UI.initLobby(
     (name) => createRoom(name),
     (name, code) => joinRoom(name, code)
   );
 
-  Network.on('CONNECTED', (msg) => {
-    localPlayerId = msg.playerId;
-    console.log('[Main] 已取得 playerId:', localPlayerId);
+  Network.on('CONNECTED', (message) => {
+    localPlayerId = message.playerId;
   });
 
-  Network.on('ROOM_CREATED', (msg) => {
-    localPlayerName = msg.player.name;
-    currentRoom = msg.roomInfo;
-    UI.showRoom(msg.roomInfo, localPlayerId, () => startGame(), () => leaveRoom());
+  Network.on('ROOM_CREATED', (message) => {
+    localPlayerName = message.player.name;
+    currentRoom = message.roomInfo;
+    UI.showRoom(message.roomInfo, localPlayerId, startGame, leaveRoom);
   });
 
-  Network.on('ROOM_JOINED', (msg) => {
-    localPlayerName = msg.player.name;
-    currentRoom = msg.roomInfo;
-    UI.showRoom(msg.roomInfo, localPlayerId, () => startGame(), () => leaveRoom());
+  Network.on('ROOM_JOINED', (message) => {
+    localPlayerName = message.player.name;
+    currentRoom = message.roomInfo;
+    UI.showRoom(message.roomInfo, localPlayerId, startGame, leaveRoom);
   });
 
-  Network.on('JOIN_FAILED', (msg) => {
-    const errMap = {
+  Network.on('JOIN_FAILED', (message) => {
+    const errorMap = {
       ROOM_NOT_FOUND: '找不到此房間代碼！',
       ROOM_FULL: '房間已滿（最多 4 人）！',
-      GAME_ALREADY_STARTED: '對戰已開始或已結束，無法加入！',
+      GAME_ALREADY_STARTED: '比賽已開始或已結束，無法加入！',
     };
-    UI.showToast(errMap[msg.error] || '加入失敗', '❌');
+    UI.showToast(errorMap[message.error] || '加入失敗', '❌');
   });
 
-  Network.on('PLAYER_JOINED', (msg) => {
-    currentRoom = msg.roomInfo;
-    UI.updateRoomUI(msg.roomInfo, localPlayerId);
-    UI.showToast(`${msg.player.name} 加入對戰！`, '⚔️');
+  Network.on('PLAYER_JOINED', (message) => {
+    currentRoom = message.roomInfo;
+    UI.updateRoomUI(message.roomInfo, localPlayerId);
+    UI.showToast(`${message.player.name} 的熊仔加入了！`, '🐻');
   });
 
-  Network.on('PLAYER_LEFT', (msg) => {
-    currentRoom = msg.roomInfo;
-    UI.updateRoomUI(msg.roomInfo, localPlayerId);
-    UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
-    UI.showToast(`${msg.playerName} 離開了對戰`, '👋');
+  Network.on('PLAYER_LEFT', (message) => {
+    currentRoom = message.roomInfo;
+    UI.updateRoomUI(message.roomInfo, localPlayerId);
+    UI.updatePlayerStatus(message.roomInfo.players, localPlayerId);
+    UI.showToast(`${message.playerName} 離開比賽`, '👋');
   });
 
-  Network.on('LEVEL_START', (msg) => {
-    completedPlayers = new Set();
-    currentRoom = msg.roomInfo;
-    currentCorrectIndex = msg.levelData.correctIndex;
-    answerSubmitted = false;
-    const players = msg.roomInfo.players;
+  Network.on('COURSE_START', (message) => {
+    courseData = message.courseData || [];
+    currentRoom = message.roomInfo;
+    localStage = 0;
 
-    if (msg.level === 1) {
-      Game.setupPlayers(players, localPlayerId);
+    Game.setupPlayers(message.roomInfo.players, localPlayerId);
+    if (!controlsInitialized) {
       Controls.init(() => Game.jump());
+      controlsInitialized = true;
     }
 
     UI.showGameHud();
-    UI.hideWaiting();
-    UI.updateQuestion(msg.level, msg.levelData.question.a, msg.levelData.question.b);
-    UI.showAnswerChoices(msg.levelData.options, submitAnswerChoice);
-    UI.updatePlayerStatus(players, completedPlayers, localPlayerId);
+    UI.updateRaceQuestion(0, courseData[0]);
+    UI.updatePlayerStatus(message.roomInfo.players, localPlayerId);
+    UI.showToast('熊仔跑酷開始！踩正確答案繼續前進！', '🏁', 2200);
 
-    UI.showToast(msg.level === 1 ? '對戰開始！可點答案或跳上平台！' : `第 ${msg.level} 關！`, '⚔️', 1600);
-    Game.loadLevel(msg.levelData, players, localPlayerId);
+    Game.loadCourse(courseData, message.roomInfo.players, localPlayerId);
     Game.setGameActive(true);
   });
 
-  Network.on('PLAYER_MOVED', (msg) => {
-    if (msg.playerId !== localPlayerId) {
-      Game.updateRemotePlayer(msg.playerId, msg.position);
+  Network.on('PLAYER_MOVED', (message) => {
+    if (message.playerId !== localPlayerId) {
+      Game.updateRemotePlayer(message.playerId, message.position);
     }
   });
 
-  Network.on('PLAYER_MISS', (msg) => {
-    currentRoom = msg.roomInfo;
-    UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
+  Network.on('PLAYER_PROGRESS', (message) => {
+    currentRoom = message.roomInfo;
+    UI.updatePlayerStatus(message.roomInfo.players, localPlayerId);
 
-    if (msg.playerId === localPlayerId) {
-      UI.showToast(`答錯！-${msg.penalty} 分，再試一次！`, '💨', 1400);
+    if (message.playerId === localPlayerId) {
+      localStage = message.currentStage;
+      Game.setLocalStage(localStage);
+      UI.updateRaceQuestion(localStage, courseData[localStage]);
+      if (localStage < courseData.length) {
+        UI.showToast(`第 ${message.completedStage + 1} 關成功！前往第 ${localStage + 1} 關`, '✅', 1500);
+      } else {
+        UI.showToast('10 關完成！快衝過終點線！', '🏁', 2200);
+      }
     } else {
-      const player = msg.roomInfo.players.find((p) => p.id === msg.playerId);
-      if (player) UI.showToast(`${player.name} 答錯了！`, '💥', 900);
+      const player = message.roomInfo.players.find((item) => item.id === message.playerId);
+      if (player) UI.showToast(`${player.name} 已到第 ${Math.min(player.currentStage + 1, 10)} 關`, '🐻', 900);
     }
   });
 
-  Network.on('PLAYER_COMPLETED', (msg) => {
-    currentRoom = msg.roomInfo;
-    completedPlayers = new Set(
-      msg.roomInfo.players.filter((p) => p.hasCompleted).map((p) => p.id)
-    );
-    UI.updatePlayerStatus(msg.roomInfo.players, completedPlayers, localPlayerId);
+  Network.on('PLAYER_FELL', (message) => {
+    currentRoom = message.roomInfo;
+    UI.updatePlayerStatus(message.roomInfo.players, localPlayerId);
 
-    const player = msg.roomInfo.players.find((p) => p.id === msg.playerId);
-    if (msg.playerId === localPlayerId) {
-      answerSubmitted = true;
-      UI.lockAnswerChoices(currentCorrectIndex);
-      Game.setGameActive(false);
-      UI.showToast(`本關第 ${msg.placement} 名，+${msg.points} 分！`, '🏁', 1800);
-    } else if (player) {
-      UI.showToast(`${player.name} 第 ${msg.placement} 名答對，+${msg.points} 分`, '⭐', 1300);
-    }
-
-    if (completedPlayers.has(localPlayerId) && msg.completedCount < msg.totalPlayers) {
-      UI.showWaiting(msg.completedCount, msg.totalPlayers, msg.placement, msg.points);
+    if (message.playerId === localPlayerId) {
+      UI.showToast('踩錯或跌落！返回本關起點再試！', '💥', 1800);
+    } else {
+      const player = message.roomInfo.players.find((item) => item.id === message.playerId);
+      if (player) UI.showToast(`${player.name} 的熊仔跌落了！`, '⬇️', 900);
     }
   });
 
-  Network.on('GAME_COMPLETED', (msg) => {
-    Game.setGameActive(false);
-    UI.hideAnswerChoices();
-    UI.showComplete(msg.totalTime, msg.missCount, msg.leaderboard, localPlayerId);
+  Network.on('PLAYER_FINISHED', (message) => {
+    currentRoom = message.roomInfo;
+    UI.updatePlayerStatus(message.roomInfo.players, localPlayerId);
+
+    if (message.playerId === localPlayerId) {
+      Game.setFinished(true);
+      UI.updateRaceQuestion(10, null);
+      UI.showRaceMessage(`你第 ${message.rank} 名到達終點！等待其他熊仔完成…`);
+      UI.showToast(`成功衝線！第 ${message.rank} 名！`, '🏆', 2400);
+    } else {
+      const player = message.roomInfo.players.find((item) => item.id === message.playerId);
+      if (player) UI.showToast(`${player.name} 第 ${message.rank} 名衝線！`, '🏁', 1400);
+    }
+  });
+
+  Network.on('GAME_COMPLETED', (message) => {
+    Game.setFinished(true);
+    UI.showComplete(message.totalTime, message.leaderboard, localPlayerId);
   });
 
   Network.on('DISCONNECTED', () => {
     UI.showToast('與伺服器斷線，嘗試重連...', '📡', 3000);
   });
 
-  Network.on('RECONNECTED', (msg) => {
-    localPlayerId = msg.playerId || Network.getPlayerId();
+  Network.on('RECONNECTED', (message) => {
+    localPlayerId = message.playerId || Network.getPlayerId();
     UI.showToast('已重新連線！', '✅', 2000);
   });
 
@@ -140,14 +147,14 @@
   }
 
   try {
-    const canvas = document.getElementById('game-canvas');
-    Game.init(canvas, {
-      onCorrectAnswer: handleCorrectAnswer,
-      onWrongAnswer: handleWrongAnswer,
+    Game.init(document.getElementById('game-canvas'), {
+      onStageCompleted: handleStageCompleted,
+      onFall: handleFall,
+      onFinish: handleFinish,
       onPositionUpdate: handlePositionUpdate,
     });
-  } catch (e) {
-    console.error('[Main] 3D 場景初始化失敗', e);
+  } catch (error) {
+    console.error('[Main] 3D 場景初始化失敗', error);
     UI.showToast('3D 畫面啟動失敗，請重新整理頁面', '❌', 6000);
     return;
   }
@@ -155,9 +162,8 @@
   try {
     await Network.connect();
     localPlayerId = Network.getPlayerId();
-    console.log('[Main] 伺服器連線完成:', localPlayerId);
-  } catch (e) {
-    console.error('[Main] 無法連線到伺服器', e);
+  } catch (error) {
+    console.error('[Main] 無法連線到伺服器', error);
     UI.showToast('無法連線到伺服器，請重新整理', '❌', 5000);
   }
 
@@ -185,33 +191,16 @@
     location.reload();
   }
 
-  function submitAnswerChoice(index) {
-    if (answerSubmitted || currentCorrectIndex === null) return;
-
-    const isCorrect = Number(index) === Number(currentCorrectIndex);
-    UI.markAnswerChoice(index, isCorrect);
-
-    if (isCorrect) {
-      answerSubmitted = true;
-      Game.setGameActive(false);
-      if (!Network.send('CORRECT_ANSWER')) {
-        answerSubmitted = false;
-        UI.showToast('答案未能送出，請重新整理', '📡', 2500);
-      }
-    } else if (!Network.send('WRONG_ANSWER')) {
-      UI.showToast('答案未能送出，請重新整理', '📡', 2500);
-    }
+  function handleStageCompleted(stageIndex) {
+    Network.send('PLAYER_STAGE_SUCCESS', { stageIndex });
   }
 
-  function handleCorrectAnswer() {
-    if (answerSubmitted) return;
-    answerSubmitted = true;
-    UI.lockAnswerChoices(currentCorrectIndex);
-    Network.send('CORRECT_ANSWER');
+  function handleFall(stageIndex) {
+    Network.send('PLAYER_FALL', { stageIndex });
   }
 
-  function handleWrongAnswer() {
-    Network.send('WRONG_ANSWER');
+  function handleFinish() {
+    Network.send('PLAYER_FINISH');
   }
 
   function handlePositionUpdate(position) {
