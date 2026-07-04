@@ -1,143 +1,106 @@
 /**
  * game.js
- * Three.js 3D 場景、角色、平台、跳躍與二段跳邏輯
+ * Three.js 熊仔跑酷：10 關、三選一平台、塌台、重生與終點線
  */
 
 const Game = (() => {
-  // Three.js 核心物件
   let scene, camera, renderer, clock;
-
-  // 遊戲狀態
   let localPlayerId = null;
-  let roomPlayers = []; // 房間玩家資料陣列
-  let levelData = null; // 當前關卡資料
+  let roomPlayers = [];
+  let courseData = [];
   let gameActive = false;
-  let hasCompletedLevel = false; // 本玩家是否已過關
+  let localStage = 0;
+  let localFinished = false;
+  let finishTriggered = false;
 
-  // 物理常數
-  const GRAVITY = -22;
-  const JUMP_FORCE = 9;
-  const MOVE_SPEED = 6;
-  const PLATFORM_Y = 0;        // 平台表面 Y 座標
-  const GROUND_Y = -2;         // 地面 Y 座標
-  const PLAYER_HEIGHT = 1.0;   // 角色腳底到中心
+  const GRAVITY = -24;
+  const JUMP_FORCE = 9.5;
+  const MOVE_SPEED = 7;
+  const GROUND_Y = 0;
+  const FALL_RESET_Y = -8;
+  const FIRST_STAGE_Z = -8;
+  const STAGE_SPACING = 13;
+  const PLATFORM_WIDTH = 3;
+  const PLATFORM_HEIGHT = 0.55;
+  const PLATFORM_DEPTH = 3.2;
+  const PLATFORM_GAP = 0.75;
+  const PLATFORM_SURFACE_Y = 1.05;
+  const VOID_DEPTH = 5.8;
 
-  // 平台設定
-  const PLATFORM_WIDTH = 2.8;
-  const PLATFORM_HEIGHT = 0.5;
-  const PLATFORM_DEPTH = 2.8;
-  const PLATFORM_GAP = 1.2;    // 平台間距
-  const PLATFORM_START_Z = -8; // 平台起始 Z 距離
-
-  // 玩家物件 Map: id -> { mesh, vel, onGround, jumpCount, ... }
   const playerObjects = new Map();
-
-  // 平台物件陣列
   let platforms = [];
-  let platformMeshes = [];
-  let labelSprites = [];
-
-  // 場景裝飾
-  let groundMesh, skyMesh;
+  let courseObjects = [];
   let particles = [];
 
-  // 回呼
-  let onCorrectAnswer = null;
-  let onWrongAnswer = null;
-  let onPositionUpdate = null;
+  let onStageCompleted = () => {};
+  let onFall = () => {};
+  let onFinish = () => {};
+  let onPositionUpdate = () => {};
 
-  // ── 初始化場景 ──────────────────────────────────────
   function init(canvas, callbacks = {}) {
-    onCorrectAnswer = callbacks.onCorrectAnswer || (() => {});
-    onWrongAnswer = callbacks.onWrongAnswer || (() => {});
+    onStageCompleted = callbacks.onStageCompleted || (() => {});
+    onFall = callbacks.onFall || (() => {});
+    onFinish = callbacks.onFinish || (() => {});
     onPositionUpdate = callbacks.onPositionUpdate || (() => {});
 
-    // 建立渲染器
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.NoToneMapping;
 
-    // 場景
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
-    scene.fog = new THREE.Fog(0x87ceeb, 20, 60);
-
-    // 時鐘
+    scene.fog = new THREE.Fog(0x87ceeb, 28, 105);
     clock = new THREE.Clock();
 
-    // 相機（第三人稱跟隨）
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-    camera.position.set(0, 6, 10);
-    camera.lookAt(0, 0, 0);
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 240);
+    camera.position.set(0, 7, 12);
+    camera.lookAt(0, 1, -3);
 
-    // 燈光
     setupLights();
-
-    // 地面
-    createGround();
-
-    // 天空裝飾
-    createSkyDecor();
-
-    // 視窗大小改變
+    createWorld();
     window.addEventListener('resize', onResize);
-
-    // 啟動渲染迴圈
     animate();
   }
 
   function setupLights() {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.62));
 
-    const dirLight = new THREE.DirectionalLight(0xfffde7, 1.2);
-    dirLight.position.set(10, 20, 10);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 100;
-    dirLight.shadow.camera.left = -20;
-    dirLight.shadow.camera.right = 20;
-    dirLight.shadow.camera.top = 20;
-    dirLight.shadow.camera.bottom = -20;
-    scene.add(dirLight);
+    const sun = new THREE.DirectionalLight(0xfffde7, 1.15);
+    sun.position.set(12, 25, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -20;
+    sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 24;
+    sun.shadow.camera.bottom = -24;
+    scene.add(sun);
 
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x44aa44, 0.4);
-    scene.add(hemi);
+    scene.add(new THREE.HemisphereLight(0x8ed8ff, 0x4fa553, 0.42));
   }
 
-  function createGround() {
-    const geo = new THREE.PlaneGeometry(80, 80);
-    const mat = new THREE.MeshToonMaterial({ color: 0x5cb85c });
-    groundMesh = new THREE.Mesh(geo, mat);
-    groundMesh.rotation.x = -Math.PI / 2;
-    groundMesh.position.y = GROUND_Y;
-    groundMesh.receiveShadow = true;
-    scene.add(groundMesh);
+  function createWorld() {
+    const courseLength = STAGE_SPACING * 10 + 35;
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(28, courseLength),
+      new THREE.MeshToonMaterial({ color: 0x79df87 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(0, GROUND_Y - 0.03, -courseLength / 2 + 8);
+    ground.receiveShadow = true;
+    scene.add(ground);
 
-    // 地面格線裝飾
-    const gridHelper = new THREE.GridHelper(80, 40, 0x44aa44, 0x44aa44);
-    gridHelper.position.y = GROUND_Y + 0.01;
-    gridHelper.material.opacity = 0.2;
-    gridHelper.material.transparent = true;
-    scene.add(gridHelper);
-  }
+    const grid = new THREE.GridHelper(courseLength, 70, 0x38a96a, 0x38a96a);
+    grid.position.set(0, GROUND_Y, -courseLength / 2 + 8);
+    grid.material.opacity = 0.17;
+    grid.material.transparent = true;
+    scene.add(grid);
 
-  function createSkyDecor() {
-    // 簡單的雲朵（用白色球體群組）
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       const cloud = createCloud();
-      cloud.position.set(
-        (Math.random() - 0.5) * 60,
-        8 + Math.random() * 5,
-        -10 - Math.random() * 30
-      );
-      cloud.userData.speed = 0.3 + Math.random() * 0.3;
-      cloud.userData.startX = cloud.position.x;
+      cloud.position.set((Math.random() - 0.5) * 55, 10 + Math.random() * 7, -10 - Math.random() * 115);
+      cloud.userData.speed = 0.25 + Math.random() * 0.25;
       scene.add(cloud);
       particles.push(cloud);
     }
@@ -145,64 +108,79 @@ const Game = (() => {
 
   function createCloud() {
     const group = new THREE.Group();
-    const mat = new THREE.MeshToonMaterial({ color: 0xffffff });
-    const positions = [
-      [0, 0, 0, 1.2],
-      [-1.2, -0.2, 0, 0.9],
-      [1.2, -0.2, 0, 0.9],
-      [0.5, 0.3, 0, 0.8],
-    ];
-    for (const [x, y, z, r] of positions) {
-      const geo = new THREE.SphereGeometry(r, 8, 6);
-      const mesh = new THREE.Mesh(geo, mat);
+    const material = new THREE.MeshToonMaterial({ color: 0xffffff });
+    [[0, 0, 0, 1.2], [-1.1, -0.15, 0, 0.85], [1.1, -0.15, 0, 0.85], [0.45, 0.32, 0, 0.75]].forEach(([x, y, z, r]) => {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 7), material);
       mesh.position.set(x, y, z);
       group.add(mesh);
-    }
+    });
     return group;
   }
 
-  // ── 建立角色 ──────────────────────────────────────────
-  function createPlayerMesh(color) {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshToonMaterial({ color });
+  function createBearMesh(color) {
+    const bear = new THREE.Group();
+    const fur = new THREE.MeshToonMaterial({ color });
+    const darkFur = new THREE.MeshToonMaterial({ color: darkenColor(color, 0.62) });
+    const muzzleMat = new THREE.MeshToonMaterial({ color: 0xffe2b8 });
+    const eyeMat = new THREE.MeshToonMaterial({ color: 0x1d1d1d });
 
-    // 身體（膠囊形：圓柱 + 半球）
-    const bodyGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.8, 10);
-    const body = new THREE.Mesh(bodyGeo, mat);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.58, 14, 11), fur);
+    body.scale.set(0.95, 1.18, 0.82);
+    body.position.y = 0.78;
     body.castShadow = true;
-    group.add(body);
+    bear.add(body);
 
-    // 頭部
-    const headGeo = new THREE.SphereGeometry(0.38, 12, 10);
-    const headMat = new THREE.MeshToonMaterial({ color: 0xffe0b2 });
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 0.75;
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 9), muzzleMat);
+    belly.scale.set(0.95, 1.15, 0.3);
+    belly.position.set(0, 0.78, 0.48);
+    bear.add(belly);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 14, 11), fur);
+    head.position.y = 1.55;
     head.castShadow = true;
-    group.add(head);
+    bear.add(head);
 
-    // 眼睛
-    const eyeMat = new THREE.MeshToonMaterial({ color: 0x333333 });
-    [-0.13, 0.13].forEach((x) => {
-      const eyeGeo = new THREE.SphereGeometry(0.07, 6, 6);
-      const eye = new THREE.Mesh(eyeGeo, eyeMat);
-      eye.position.set(x, 0.8, 0.33);
-      group.add(eye);
+    [-0.34, 0.34].forEach((x) => {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), darkFur);
+      ear.position.set(x, 1.88, 0);
+      bear.add(ear);
     });
 
-    // 帽子（方塊）
-    const hatGeo = new THREE.BoxGeometry(0.55, 0.3, 0.55);
-    const hatMat = new THREE.MeshToonMaterial({ color: darkenColor(color, 0.5) });
-    const hat = new THREE.Mesh(hatGeo, hatMat);
-    hat.position.y = 1.2;
-    group.add(hat);
+    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 9), muzzleMat);
+    muzzle.scale.set(1.1, 0.85, 0.72);
+    muzzle.position.set(0, 1.45, 0.4);
+    bear.add(muzzle);
 
-    // 帽沿
-    const brimGeo = new THREE.BoxGeometry(0.75, 0.07, 0.75);
-    const brim = new THREE.Mesh(brimGeo, hatMat);
-    brim.position.y = 1.08;
-    group.add(brim);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), eyeMat);
+    nose.position.set(0, 1.53, 0.59);
+    bear.add(nose);
 
-    return group;
+    [-0.17, 0.17].forEach((x) => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), eyeMat);
+      eye.position.set(x, 1.67, 0.42);
+      bear.add(eye);
+    });
+
+    [-0.5, 0.5].forEach((x) => {
+      const arm = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), fur);
+      arm.scale.set(0.7, 1.25, 0.7);
+      arm.position.set(x, 0.92, 0.02);
+      arm.rotation.z = x < 0 ? -0.25 : 0.25;
+      bear.add(arm);
+    });
+
+    [-0.27, 0.27].forEach((x) => {
+      const leg = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), darkFur);
+      leg.scale.set(0.82, 0.7, 1.05);
+      leg.position.set(x, 0.2, 0.05);
+      bear.add(leg);
+    });
+
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.18, 9, 7), muzzleMat);
+    tail.position.set(0, 0.75, -0.53);
+    bear.add(tail);
+
+    return bear;
   }
 
   function darkenColor(hex, factor) {
@@ -212,323 +190,267 @@ const Game = (() => {
     return (r << 16) | (g << 8) | b;
   }
 
-  // ── 平台 ──────────────────────────────────────────────
-  function createPlatforms(options, correctIndex) {
-    clearPlatforms();
-
-    const totalW = options.length * PLATFORM_WIDTH + (options.length - 1) * PLATFORM_GAP;
-    const startX = -totalW / 2 + PLATFORM_WIDTH / 2;
-
-    options.forEach((value, i) => {
-      const isCorrect = i === correctIndex;
-      const x = startX + i * (PLATFORM_WIDTH + PLATFORM_GAP);
-      const z = PLATFORM_START_Z;
-
-      // 平台本體
-      const geo = new THREE.BoxGeometry(PLATFORM_WIDTH, PLATFORM_HEIGHT, PLATFORM_DEPTH);
-
-      // 正確/錯誤用不同顏色（主要辨識還是靠數字）
-      const color = isCorrect ? 0x4fc3f7 : 0xef9a9a;
-      const mat = new THREE.MeshToonMaterial({ color });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, PLATFORM_Y - PLATFORM_HEIGHT / 2, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-
-      // 平台邊框（輪廓）
-      const edges = new THREE.EdgesGeometry(geo);
-      const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
-      const edgesMesh = new THREE.LineSegments(edges, lineMat);
-      mesh.add(edgesMesh);
-
-      // 數字標籤
-      const label = createTextSprite(String(value), isCorrect ? '#ffffff' : '#ffffff');
-      label.position.set(x, PLATFORM_Y + 0.5, z);
-      scene.add(label);
-
-      const platformData = {
-        mesh,
-        label,
-        value,
-        isCorrect,
-        x,
-        z,
-        alive: true,
-        shakeTimer: 0,
-        fallTimer: -1,
-        originalY: mesh.position.y,
-      };
-
-      platforms.push(platformData);
-      platformMeshes.push(mesh);
-      labelSprites.push(label);
-    });
-  }
-
-  function clearPlatforms() {
-    platforms.forEach((p) => {
-      scene.remove(p.mesh);
-      scene.remove(p.label);
-      if (p.mesh.geometry) p.mesh.geometry.dispose();
-      if (p.label.material && p.label.material.map) p.label.material.map.dispose();
-    });
-    platforms = [];
-    platformMeshes = [];
-    labelSprites = [];
-  }
-
-  // ── 文字 Sprite ──────────────────────────────────────
-  function createTextSprite(text, color = '#ffffff') {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    // 背景（圓形徽章）
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath();
-    ctx.arc(128, 128, 110, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 邊框
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 8;
-    ctx.stroke();
-
-    // 數字
-    ctx.fillStyle = color;
-    ctx.font = 'bold 120px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 135);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(2.2, 2.2, 1);
-    return sprite;
-  }
-
-  // ── 玩家管理 ──────────────────────────────────────────
   function setupPlayers(players, myId) {
     localPlayerId = myId;
     roomPlayers = players;
 
-    // 移除舊的玩家
-    playerObjects.forEach((obj) => {
-      scene.remove(obj.mesh);
-    });
+    playerObjects.forEach((obj) => scene.remove(obj.mesh));
     playerObjects.clear();
 
-    players.forEach((p, i) => {
-      const mesh = createPlayerMesh(p.color);
-      const startX = (i - (players.length - 1) / 2) * 2.5;
-      mesh.position.set(startX, GROUND_Y + PLAYER_HEIGHT, 2);
+    players.forEach((player, index) => {
+      const mesh = createBearMesh(player.color);
+      mesh.position.set(startXForIndex(index, players.length), GROUND_Y, 2);
       scene.add(mesh);
 
-      playerObjects.set(p.id, {
+      playerObjects.set(player.id, {
         mesh,
-        vel: { x: 0, y: 0, z: 0 },
+        vel: new THREE.Vector3(),
         onGround: true,
         jumpCount: 0,
-        hasCompletedLevel: false,
-        isLocal: p.id === myId,
-        color: p.color,
-        name: p.name,
+        isLocal: player.id === myId,
         bobTimer: Math.random() * Math.PI * 2,
+        fallReported: false,
       });
     });
   }
 
-  function updateRemotePlayer(pid, position) {
-    const obj = playerObjects.get(pid);
-    if (!obj || obj.isLocal) return;
-    // 平滑插值
-    obj.mesh.position.x += (position.x - obj.mesh.position.x) * 0.2;
-    obj.mesh.position.y += (position.y - obj.mesh.position.y) * 0.2;
-    obj.mesh.position.z += (position.z - obj.mesh.position.z) * 0.2;
+  function startXForIndex(index, count) {
+    return (index - (count - 1) / 2) * 1.8;
   }
 
-  // ── 跳躍 ──────────────────────────────────────────────
+  function loadCourse(data, players, myId) {
+    courseData = Array.isArray(data) ? data : [];
+    roomPlayers = players || [];
+    if (myId) localPlayerId = myId;
+    localStage = 0;
+    localFinished = false;
+    finishTriggered = false;
+    createCourseObjects();
+    resetLocalPlayer(false);
+    gameActive = true;
+  }
+
+  function createCourseObjects() {
+    clearCourseObjects();
+
+    courseData.forEach((stage, stageIndex) => {
+      const stageZ = getStageZ(stageIndex);
+
+      const voidMarker = new THREE.Mesh(
+        new THREE.PlaneGeometry(19, VOID_DEPTH),
+        new THREE.MeshBasicMaterial({ color: 0x172038 })
+      );
+      voidMarker.rotation.x = -Math.PI / 2;
+      voidMarker.position.set(0, GROUND_Y + 0.015, stageZ);
+      scene.add(voidMarker);
+      courseObjects.push(voidMarker);
+
+      const question = createTextSprite(`${stage.question.a} × ${stage.question.b}`, '#ffe36b', 'rgba(20,30,55,0.92)');
+      question.position.set(0, 4.5, stageZ + 0.2);
+      question.scale.set(4.6, 2.2, 1);
+      scene.add(question);
+      courseObjects.push(question);
+
+      const totalWidth = 3 * PLATFORM_WIDTH + 2 * PLATFORM_GAP;
+      const startX = -totalWidth / 2 + PLATFORM_WIDTH / 2;
+
+      stage.options.forEach((value, optionIndex) => {
+        const x = startX + optionIndex * (PLATFORM_WIDTH + PLATFORM_GAP);
+        const geometry = new THREE.BoxGeometry(PLATFORM_WIDTH, PLATFORM_HEIGHT, PLATFORM_DEPTH);
+        const material = new THREE.MeshToonMaterial({ color: 0x3f78bf });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(x, PLATFORM_SURFACE_Y - PLATFORM_HEIGHT / 2, stageZ);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        const edge = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({ color: 0xffffff })
+        );
+        mesh.add(edge);
+
+        const label = createTextSprite(String(value), '#ffffff', 'rgba(10,25,60,0.86)');
+        label.position.set(x, PLATFORM_SURFACE_Y + 0.75, stageZ);
+        scene.add(label);
+
+        const platform = {
+          mesh,
+          label,
+          stageIndex,
+          optionIndex,
+          isCorrect: optionIndex === stage.correctIndex,
+          x,
+          z: stageZ,
+          originalY: mesh.position.y,
+          collapsing: false,
+          collapseSpeed: 0,
+          passed: false,
+        };
+        platforms.push(platform);
+        courseObjects.push(mesh, label);
+      });
+    });
+
+    createFinishLine();
+  }
+
+  function createFinishLine() {
+    const finishZ = getFinishZ();
+    const white = new THREE.MeshToonMaterial({ color: 0xffffff });
+    const gold = new THREE.MeshToonMaterial({ color: 0xffcc33 });
+
+    [-5.6, 5.6].forEach((x) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.45, 5.8, 0.45), gold);
+      post.position.set(x, 2.9, finishZ);
+      post.castShadow = true;
+      scene.add(post);
+      courseObjects.push(post);
+    });
+
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(11.7, 0.55, 0.55), gold);
+    beam.position.set(0, 5.55, finishZ);
+    scene.add(beam);
+    courseObjects.push(beam);
+
+    const banner = createTextSprite('FINISH 終點', '#1a1a2e', '#ffffff');
+    banner.position.set(0, 4.7, finishZ);
+    banner.scale.set(5.2, 1.6, 1);
+    scene.add(banner);
+    courseObjects.push(banner);
+
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(12, 1.4), white);
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(0, GROUND_Y + 0.02, finishZ);
+    scene.add(line);
+    courseObjects.push(line);
+  }
+
+  function createTextSprite(text, color = '#ffffff', background = 'rgba(0,0,0,0.72)') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 220;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = background;
+    roundRect(ctx, 12, 12, 488, 196, 34);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 92px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 256, 116);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(3.2, 1.4, 1);
+    return sprite;
+  }
+
+  function roundRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  function clearCourseObjects() {
+    courseObjects.forEach((object) => {
+      scene.remove(object);
+      if (object.geometry) object.geometry.dispose();
+      if (object.material && object.material.map) object.material.map.dispose();
+    });
+    courseObjects = [];
+    platforms = [];
+  }
+
   function jump() {
-    if (!gameActive) return;
-
+    if (!gameActive || localFinished) return;
     const local = playerObjects.get(localPlayerId);
-    if (!local) return;
+    if (!local || local.jumpCount >= 2) return;
 
-    if (local.jumpCount < 2) {
-      local.vel.y = JUMP_FORCE;
-      local.onGround = false;
-      local.jumpCount++;
-
-      // 跳躍特效（小縮放彈跳）
-      local.mesh.scale.set(0.9, 1.15, 0.9);
-      setTimeout(() => {
-        if (local.mesh) local.mesh.scale.set(1, 1, 1);
-      }, 120);
-    }
+    local.vel.y = JUMP_FORCE;
+    local.onGround = false;
+    local.jumpCount++;
+    local.mesh.scale.set(0.92, 1.1, 0.92);
   }
 
-  // ── 碰撞檢測 ──────────────────────────────────────────
-  function checkPlatformCollision(obj) {
-    if (!levelData || obj.vel.y > 0) return; // 上升中不檢測
-    if (hasCompletedLevel) return;
-
-    const pos = obj.mesh.position;
-
-    for (const p of platforms) {
-      if (!p.alive) continue;
-
-      // 平台表面 Y
-      const surfaceY = p.mesh.position.y + PLATFORM_HEIGHT / 2;
-
-      // Y 範圍：腳底略高於平台，且速度向下
-      const feetY = pos.y - PLAYER_HEIGHT;
-      if (feetY > surfaceY + 0.3) continue; // 還在上方
-      if (feetY < surfaceY - 0.5) continue; // 已在平台下方
-
-      // X/Z 範圍
-      const halfW = PLATFORM_WIDTH / 2;
-      const halfD = PLATFORM_DEPTH / 2;
-      if (Math.abs(pos.x - p.x) > halfW + 0.3) continue;
-      if (Math.abs(pos.z - p.z) > halfD + 0.3) continue;
-
-      // 落在平台上
-      if (p.isCorrect) {
-        // 正確答案！
-        landOnPlatform(obj, surfaceY);
-        if (!hasCompletedLevel) {
-          hasCompletedLevel = true;
-          obj.hasCompletedLevel = true;
-
-          // 勝利特效
-          spawnConfetti(pos.x, pos.y, pos.z);
-          onCorrectAnswer();
-        }
-      } else {
-        // 錯誤答案：平台開始塌陷
-        if (p.fallTimer < 0) {
-          p.shakeTimer = 0.4;
-          p.fallTimer = 0.5; // 0.5 秒後開始下落
-          p.alive = false;    // 不允許再站上
-
-          setTimeout(() => onWrongAnswer(), 200);
-        }
-        // 玩家落到地面（不阻止掉落）
-      }
-      return;
-    }
-  }
-
-  function landOnPlatform(obj, surfaceY) {
-    obj.vel.y = 0;
-    obj.onGround = true;
-    obj.jumpCount = 0;
-    obj.mesh.position.y = surfaceY + PLAYER_HEIGHT;
-  }
-
-  // ── 粒子特效 ──────────────────────────────────────────
-  const confettiParticles = [];
-
-  function spawnConfetti(x, y, z) {
-    const colors = [0xffcc44, 0x44aaff, 0xff6699, 0x44ff88, 0xff8844];
-    for (let i = 0; i < 20; i++) {
-      const geo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
-      const mat = new THREE.MeshToonMaterial({ color: colors[i % colors.length] });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y, z);
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 3 + Math.random() * 4;
-      mesh.userData.vel = {
-        x: Math.cos(angle) * speed,
-        y: 5 + Math.random() * 5,
-        z: Math.sin(angle) * speed,
-      };
-      mesh.userData.life = 1.5;
-      scene.add(mesh);
-      confettiParticles.push(mesh);
-    }
-  }
-
-  // ── 主更新迴圈 ────────────────────────────────────────
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
 
     if (gameActive) {
       updateLocalPlayer(dt);
-      updatePlatforms(dt);
-      updateConfetti(dt);
-      updateClouds(dt);
+      updateCollapsingPlatforms(dt);
       updateCamera();
     }
-
+    updateClouds(dt);
     renderer.render(scene, camera);
   }
 
   function updateLocalPlayer(dt) {
     const obj = playerObjects.get(localPlayerId);
-    if (!obj) return;
+    if (!obj || localFinished) return;
 
-    // 取得搖桿輸入
     const input = Controls.getInput();
+    obj.vel.x = input.x * MOVE_SPEED;
+    obj.vel.z = input.y * MOVE_SPEED;
 
-    // 水平移動（只在未過關時）
-    if (!hasCompletedLevel) {
-      obj.vel.x = input.x * MOVE_SPEED;
-      obj.vel.z = input.y * MOVE_SPEED; // joystick y -> world Z
-    } else {
-      obj.vel.x *= 0.85;
-      obj.vel.z *= 0.85;
-    }
+    if (!obj.onGround) obj.vel.y += GRAVITY * dt;
 
-    // 重力
-    if (!obj.onGround) {
-      obj.vel.y += GRAVITY * dt;
-    }
-
-    // 更新位置
+    const previousY = obj.mesh.position.y;
     obj.mesh.position.x += obj.vel.x * dt;
     obj.mesh.position.y += obj.vel.y * dt;
     obj.mesh.position.z += obj.vel.z * dt;
+    obj.mesh.position.x = Math.max(-7, Math.min(7, obj.mesh.position.x));
 
-    // 地面碰撞
-    const groundLevel = GROUND_Y + PLAYER_HEIGHT;
-    if (obj.mesh.position.y <= groundLevel) {
-      obj.mesh.position.y = groundLevel;
-      obj.vel.y = 0;
-      obj.onGround = true;
-      obj.jumpCount = 0;
-    } else {
-      obj.onGround = false;
+    const checkpointZ = getCheckpointZ(localStage);
+    obj.mesh.position.z = Math.min(checkpointZ + 3, obj.mesh.position.z);
+    if (localStage < courseData.length) {
+      obj.mesh.position.z = Math.max(getStageZ(localStage) - 2.15, obj.mesh.position.z);
     }
 
-    // 平台碰撞
-    checkPlatformCollision(obj);
+    obj.onGround = false;
+    const landedOnPlatform = checkPlatformLanding(obj, previousY);
 
-    // 限制 X 範圍
-    obj.mesh.position.x = Math.max(-12, Math.min(12, obj.mesh.position.x));
-
-    // 角色朝向（面向移動方向）
-    if (Math.abs(obj.vel.x) > 0.1 || Math.abs(obj.vel.z) > 0.1) {
-      const angle = Math.atan2(obj.vel.x, obj.vel.z);
-      obj.mesh.rotation.y = angle;
+    if (!landedOnPlatform && !isInVoidZone(obj.mesh.position.z) && obj.mesh.position.y <= GROUND_Y) {
+      landAtHeight(obj, GROUND_Y);
     }
 
-    // 跳躍動畫（壓縮/拉伸）
+    if (!obj.onGround && obj.mesh.position.y < FALL_RESET_Y) {
+      resetLocalPlayer(!obj.fallReported);
+    }
+
     if (!obj.onGround) {
-      const stretch = 1 + obj.vel.y * 0.02;
-      obj.mesh.scale.set(1 / Math.sqrt(Math.abs(stretch)), Math.max(0.7, stretch), 1 / Math.sqrt(Math.abs(stretch)));
+      const stretch = Math.max(0.75, 1 + obj.vel.y * 0.018);
+      obj.mesh.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
     } else {
-      obj.mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.2);
-
-      // 待機搖擺
-      obj.bobTimer += dt * 2;
-      obj.mesh.position.y += Math.sin(obj.bobTimer) * 0.005;
+      obj.mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.22);
+      obj.bobTimer += dt * 3;
+      obj.mesh.rotation.z = Math.sin(obj.bobTimer) * 0.025;
     }
 
-    // 同步位置到伺服器（每幀）
+    if (Math.abs(obj.vel.x) > 0.1 || Math.abs(obj.vel.z) > 0.1) {
+      obj.mesh.rotation.y = Math.atan2(obj.vel.x, obj.vel.z);
+    }
+
+    if (localStage >= courseData.length && obj.mesh.position.z <= getFinishZ() && !finishTriggered) {
+      finishTriggered = true;
+      localFinished = true;
+      obj.vel.set(0, 0, 0);
+      onFinish();
+    }
+
     onPositionUpdate({
       x: obj.mesh.position.x,
       y: obj.mesh.position.y,
@@ -536,123 +458,172 @@ const Game = (() => {
     });
   }
 
-  function updatePlatforms(dt) {
-    platforms.forEach((p) => {
-      if (p.shakeTimer > 0) {
-        p.shakeTimer -= dt;
-        p.mesh.position.x = p.x + Math.sin(p.shakeTimer * 30) * 0.08;
-        p.mesh.position.y = p.originalY + Math.sin(p.shakeTimer * 25) * 0.05;
-      }
+  function checkPlatformLanding(obj, previousY) {
+    if (obj.vel.y > 0) return false;
 
-      if (p.fallTimer >= 0) {
-        p.fallTimer -= dt;
-        if (p.fallTimer < 0) {
-          // 開始下落
-          p.fallTimer = -2; // 標記為正在下落
+    for (const platform of platforms) {
+      if (platform.collapsing) continue;
+      if (Math.abs(obj.mesh.position.x - platform.x) > PLATFORM_WIDTH / 2 + 0.22) continue;
+      if (Math.abs(obj.mesh.position.z - platform.z) > PLATFORM_DEPTH / 2 + 0.22) continue;
+      if (previousY < PLATFORM_SURFACE_Y - 0.45) continue;
+      if (obj.mesh.position.y > PLATFORM_SURFACE_Y + 0.32) continue;
+
+      if (platform.stageIndex === localStage) {
+        if (platform.isCorrect) {
+          landAtHeight(obj, PLATFORM_SURFACE_Y);
+          if (!platform.passed) {
+            platform.passed = true;
+            platform.mesh.material.color.setHex(0x39c96f);
+            const completedStage = localStage;
+            localStage++;
+            spawnConfetti(obj.mesh.position.x, obj.mesh.position.y + 1, obj.mesh.position.z);
+            onStageCompleted(completedStage);
+          }
+          return true;
         }
+
+        platform.collapsing = true;
+        platform.collapseSpeed = 0;
+        platform.mesh.material.color.setHex(0xe54747);
+        obj.fallReported = true;
+        onFall(localStage);
+        return false;
       }
 
-      if (p.fallTimer <= -0.01 && p.fallTimer > -5) {
-        p.mesh.position.y -= dt * 5;
-        p.label.position.y -= dt * 5;
-        p.mesh.material.opacity = Math.max(0, p.mesh.material.opacity - dt * 2);
-        if (!p.mesh.material.transparent) p.mesh.material.transparent = true;
-        p.label.material.opacity = p.mesh.material.opacity;
-
-        // 超過一定深度後移除
-        if (p.mesh.position.y < GROUND_Y - 10) {
-          scene.remove(p.mesh);
-          scene.remove(p.label);
-          p.fallTimer = -999;
-        }
-      }
-    });
-  }
-
-  function updateConfetti(dt) {
-    for (let i = confettiParticles.length - 1; i >= 0; i--) {
-      const m = confettiParticles[i];
-      m.userData.life -= dt;
-      m.userData.vel.y += GRAVITY * dt;
-      m.position.x += m.userData.vel.x * dt;
-      m.position.y += m.userData.vel.y * dt;
-      m.position.z += m.userData.vel.z * dt;
-      m.rotation.x += dt * 3;
-      m.rotation.z += dt * 2;
-      m.material.opacity = m.userData.life / 1.5;
-      if (!m.material.transparent) m.material.transparent = true;
-
-      if (m.userData.life <= 0) {
-        scene.remove(m);
-        if (m.geometry) m.geometry.dispose();
-        confettiParticles.splice(i, 1);
+      if (platform.isCorrect && platform.stageIndex < localStage) {
+        landAtHeight(obj, PLATFORM_SURFACE_Y);
+        return true;
       }
     }
+
+    return false;
   }
 
-  function updateClouds(dt) {
-    particles.forEach((cloud) => {
-      cloud.position.x += cloud.userData.speed * dt;
-      if (cloud.position.x > 35) {
-        cloud.position.x = -35;
-      }
+  function landAtHeight(obj, height) {
+    obj.mesh.position.y = height;
+    obj.vel.y = 0;
+    obj.onGround = true;
+    obj.jumpCount = 0;
+  }
+
+  function updateCollapsingPlatforms(dt) {
+    platforms.forEach((platform) => {
+      if (!platform.collapsing) return;
+      platform.collapseSpeed += 11 * dt;
+      platform.mesh.position.y -= platform.collapseSpeed * dt;
+      platform.label.position.y -= platform.collapseSpeed * dt;
+      platform.mesh.rotation.z += dt * 0.9;
+      platform.mesh.material.transparent = true;
+      platform.mesh.material.opacity = Math.max(0.15, platform.mesh.material.opacity - dt * 0.8);
+      platform.label.material.opacity = platform.mesh.material.opacity;
     });
+  }
+
+  function resetLocalPlayer(reportFall) {
+    const obj = playerObjects.get(localPlayerId);
+    if (!obj) return;
+
+    if (reportFall) onFall(Math.min(localStage, courseData.length - 1));
+    restoreStagePlatforms(Math.min(localStage, courseData.length - 1));
+
+    const playerIndex = Math.max(0, roomPlayers.findIndex((player) => player.id === localPlayerId));
+    obj.mesh.position.set(startXForIndex(playerIndex, roomPlayers.length), GROUND_Y, getCheckpointZ(localStage));
+    obj.vel.set(0, 0, 0);
+    obj.onGround = true;
+    obj.jumpCount = 0;
+    obj.fallReported = false;
+    obj.mesh.scale.set(1, 1, 1);
+  }
+
+  function restoreStagePlatforms(stageIndex) {
+    platforms.forEach((platform) => {
+      if (platform.stageIndex !== stageIndex || platform.isCorrect) return;
+      platform.collapsing = false;
+      platform.collapseSpeed = 0;
+      platform.mesh.position.y = platform.originalY;
+      platform.mesh.rotation.set(0, 0, 0);
+      platform.mesh.material.opacity = 1;
+      platform.mesh.material.transparent = false;
+      platform.mesh.material.color.setHex(0x3f78bf);
+      platform.label.position.y = PLATFORM_SURFACE_Y + 0.75;
+      platform.label.material.opacity = 1;
+    });
+  }
+
+  function spawnConfetti(x, y, z) {
+    const colors = [0xffcc44, 0x44aaff, 0xff6699, 0x44ff88];
+    for (let i = 0; i < 14; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.14, 0.14),
+        new THREE.MeshToonMaterial({ color: colors[i % colors.length] })
+      );
+      mesh.position.set(x, y, z);
+      const angle = Math.random() * Math.PI * 2;
+      mesh.userData.vel = new THREE.Vector3(Math.cos(angle) * 4, 5 + Math.random() * 3, Math.sin(angle) * 4);
+      mesh.userData.life = 1.2;
+      scene.add(mesh);
+      courseObjects.push(mesh);
+    }
   }
 
   function updateCamera() {
     const local = playerObjects.get(localPlayerId);
     if (!local) return;
 
-    const targetX = local.mesh.position.x * 0.3;
-    const targetY = 8;
-    const targetZ = local.mesh.position.z + 12;
-
-    camera.position.x += (targetX - camera.position.x) * 0.05;
-    camera.position.y += (targetY - camera.position.y) * 0.05;
-    camera.position.z += (targetZ - camera.position.z) * 0.05;
-
-    const lookAtX = local.mesh.position.x * 0.5;
-    const lookAtY = local.mesh.position.y;
-    const lookAtZ = local.mesh.position.z - 3;
-    camera.lookAt(lookAtX, lookAtY, lookAtZ);
+    const targetX = local.mesh.position.x * 0.35;
+    const targetY = local.mesh.position.y + 7.2;
+    const targetZ = local.mesh.position.z + 10.5;
+    camera.position.x += (targetX - camera.position.x) * 0.07;
+    camera.position.y += (targetY - camera.position.y) * 0.07;
+    camera.position.z += (targetZ - camera.position.z) * 0.07;
+    camera.lookAt(local.mesh.position.x * 0.35, local.mesh.position.y + 0.8, local.mesh.position.z - 5.2);
   }
 
-  // ── 關卡載入 ──────────────────────────────────────────
-  function loadLevel(data, players, myId) {
-    levelData = data;
-    gameActive = true;
-    hasCompletedLevel = false;
-
-    // 更新玩家資料
-    roomPlayers = players;
-    if (myId) localPlayerId = myId;
-
-    // 重設本地玩家位置
-    const obj = playerObjects.get(localPlayerId);
-    if (obj) {
-      const idx = players.findIndex((p) => p.id === localPlayerId);
-      const startX = (idx - (players.length - 1) / 2) * 2.5;
-      obj.mesh.position.set(startX, GROUND_Y + PLAYER_HEIGHT, 2);
-      obj.vel = { x: 0, y: 0, z: 0 };
-      obj.onGround = true;
-      obj.jumpCount = 0;
-      obj.hasCompletedLevel = false;
-    }
-
-    // 建立平台
-    createPlatforms(data.options, data.correctIndex);
+  function updateClouds(dt) {
+    particles.forEach((cloud) => {
+      cloud.position.x += cloud.userData.speed * dt;
+      if (cloud.position.x > 35) cloud.position.x = -35;
+    });
   }
 
-  function resetLevel() {
-    hasCompletedLevel = false;
-    const obj = playerObjects.get(localPlayerId);
-    if (obj) {
-      obj.hasCompletedLevel = false;
-    }
+  function updateRemotePlayer(playerId, position) {
+    const obj = playerObjects.get(playerId);
+    if (!obj || obj.isLocal || !position) return;
+    obj.mesh.position.x += (position.x - obj.mesh.position.x) * 0.24;
+    obj.mesh.position.y += (position.y - obj.mesh.position.y) * 0.24;
+    obj.mesh.position.z += (position.z - obj.mesh.position.z) * 0.24;
+  }
+
+  function setLocalStage(stage) {
+    localStage = Math.max(0, Math.min(courseData.length, Number(stage) || 0));
+  }
+
+  function setFinished(finished) {
+    localFinished = Boolean(finished);
+    if (localFinished) gameActive = false;
   }
 
   function setGameActive(active) {
-    gameActive = active;
+    gameActive = Boolean(active);
+  }
+
+  function getStageZ(stageIndex) {
+    return FIRST_STAGE_Z - stageIndex * STAGE_SPACING;
+  }
+
+  function getCheckpointZ(stageIndex) {
+    if (courseData.length === 0) return 2;
+    if (stageIndex >= courseData.length) return getStageZ(courseData.length - 1) - 4.6;
+    return getStageZ(stageIndex) + 5.2;
+  }
+
+  function getFinishZ() {
+    const lastStage = Math.max(0, courseData.length - 1);
+    return getStageZ(lastStage) - 9;
+  }
+
+  function isInVoidZone(z) {
+    return courseData.some((_, index) => Math.abs(z - getStageZ(index)) <= VOID_DEPTH / 2);
   }
 
   function onResize() {
@@ -663,17 +634,18 @@ const Game = (() => {
 
   function dispose() {
     window.removeEventListener('resize', onResize);
-    clearPlatforms();
+    clearCourseObjects();
     if (renderer) renderer.dispose();
   }
 
   return {
     init,
     setupPlayers,
-    loadLevel,
+    loadCourse,
     jump,
-    resetLevel,
     setGameActive,
+    setLocalStage,
+    setFinished,
     updateRemotePlayer,
     dispose,
   };

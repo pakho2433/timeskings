@@ -1,6 +1,6 @@
 /**
  * roomManager.js
- * 房間建立、加入、人數與對戰玩家資料管理
+ * 房間、人數與熊仔跑酷進度管理
  */
 
 const MAX_PLAYERS_PER_ROOM = 4;
@@ -18,16 +18,13 @@ function generateRoomCode() {
 function createRoom(playerId, playerName) {
   const code = generateRoomCode();
   const player = createPlayer(playerId, playerName, 0);
-
   const room = {
     code,
     players: new Map([[playerId, player]]),
     gameState: 'waiting',
-    currentLevel: 0,
-    levelData: null,
-    completedPlayers: new Set(),
-    missCount: 0,
+    courseData: null,
     startTime: null,
+    finishOrder: [],
   };
 
   rooms.set(code, room);
@@ -35,23 +32,16 @@ function createRoom(playerId, playerName) {
 }
 
 function joinRoom(code, playerId, playerName) {
-  if (typeof code !== 'string') {
-    return { success: false, error: 'ROOM_NOT_FOUND' };
-  }
+  if (typeof code !== 'string') return { success: false, error: 'ROOM_NOT_FOUND' };
 
   const room = rooms.get(code.toUpperCase());
   if (!room) return { success: false, error: 'ROOM_NOT_FOUND' };
-  if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
-    return { success: false, error: 'ROOM_FULL' };
-  }
-  if (room.gameState !== 'waiting') {
-    return { success: false, error: 'GAME_ALREADY_STARTED' };
-  }
+  if (room.players.size >= MAX_PLAYERS_PER_ROOM) return { success: false, error: 'ROOM_FULL' };
+  if (room.gameState !== 'waiting') return { success: false, error: 'GAME_ALREADY_STARTED' };
 
   const slotIndex = getNextSlotIndex(room);
   const player = createPlayer(playerId, playerName, slotIndex);
   room.players.set(playerId, player);
-
   return { success: true, room, player };
 }
 
@@ -60,7 +50,7 @@ function leaveRoom(playerId) {
     if (!room.players.has(playerId)) continue;
 
     room.players.delete(playerId);
-    room.completedPlayers.delete(playerId);
+    room.finishOrder = room.finishOrder.filter((id) => id !== playerId);
 
     if (room.players.size === 0) {
       rooms.delete(code);
@@ -80,18 +70,18 @@ function getRoomByPlayerId(playerId) {
 }
 
 function createPlayer(id, name, slotIndex) {
-  const colors = [0xff4444, 0x44aaff, 0x44ff88, 0xffcc44];
+  const colors = [0xe94b4b, 0x3f8cff, 0x36c978, 0xf5b83d];
   return {
     id,
     name: sanitizePlayerName(name) || `玩家 ${slotIndex + 1}`,
     slotIndex,
     color: colors[slotIndex % colors.length],
-    position: { x: (slotIndex - 1.5) * 2, y: 1, z: 0 },
-    hasCompleted: false,
-    lastPlacement: null,
-    score: 0,
-    correctAnswers: 0,
-    wrongAnswers: 0,
+    position: { x: (slotIndex - 1.5) * 1.8, y: 0, z: 2 },
+    currentStage: 0,
+    isFinished: false,
+    finishTime: null,
+    finishRank: null,
+    falls: 0,
   };
 }
 
@@ -112,7 +102,6 @@ function getRoomInfo(room) {
   return {
     code: room.code,
     gameState: room.gameState,
-    currentLevel: room.currentLevel,
     playerCount: room.players.size,
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     players: [...room.players.values()].map((p) => ({
@@ -120,11 +109,11 @@ function getRoomInfo(room) {
       name: p.name,
       slotIndex: p.slotIndex,
       color: p.color,
-      hasCompleted: p.hasCompleted,
-      lastPlacement: p.lastPlacement,
-      score: p.score,
-      correctAnswers: p.correctAnswers,
-      wrongAnswers: p.wrongAnswers,
+      currentStage: p.currentStage,
+      isFinished: p.isFinished,
+      finishTime: p.finishTime,
+      finishRank: p.finishRank,
+      falls: p.falls,
     })),
   };
 }
