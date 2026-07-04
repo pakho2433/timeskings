@@ -9,6 +9,8 @@
   let currentRoom = null;
   let completedPlayers = new Set();
   let positionThrottle = 0;
+  let currentCorrectIndex = null;
+  let answerSubmitted = false;
 
   UI.initLobby(
     (name) => createRoom(name),
@@ -57,6 +59,8 @@
   Network.on('LEVEL_START', (msg) => {
     completedPlayers = new Set();
     currentRoom = msg.roomInfo;
+    currentCorrectIndex = msg.levelData.correctIndex;
+    answerSubmitted = false;
     const players = msg.roomInfo.players;
 
     if (msg.level === 1) {
@@ -67,9 +71,10 @@
     UI.showGameHud();
     UI.hideWaiting();
     UI.updateQuestion(msg.level, msg.levelData.question.a, msg.levelData.question.b);
+    UI.showAnswerChoices(msg.levelData.options, submitAnswerChoice);
     UI.updatePlayerStatus(players, completedPlayers, localPlayerId);
 
-    UI.showToast(msg.level === 1 ? '對戰開始！搶先答對得高分！' : `第 ${msg.level} 關！`, '⚔️', 1600);
+    UI.showToast(msg.level === 1 ? '對戰開始！可點答案或跳上平台！' : `第 ${msg.level} 關！`, '⚔️', 1600);
     Game.loadLevel(msg.levelData, players, localPlayerId);
     Game.setGameActive(true);
   });
@@ -101,6 +106,9 @@
 
     const player = msg.roomInfo.players.find((p) => p.id === msg.playerId);
     if (msg.playerId === localPlayerId) {
+      answerSubmitted = true;
+      UI.lockAnswerChoices(currentCorrectIndex);
+      Game.setGameActive(false);
       UI.showToast(`本關第 ${msg.placement} 名，+${msg.points} 分！`, '🏁', 1800);
     } else if (player) {
       UI.showToast(`${player.name} 第 ${msg.placement} 名答對，+${msg.points} 分`, '⭐', 1300);
@@ -113,6 +121,7 @@
 
   Network.on('GAME_COMPLETED', (msg) => {
     Game.setGameActive(false);
+    UI.hideAnswerChoices();
     UI.showComplete(msg.totalTime, msg.missCount, msg.leaderboard, localPlayerId);
   });
 
@@ -176,7 +185,28 @@
     location.reload();
   }
 
+  function submitAnswerChoice(index) {
+    if (answerSubmitted || currentCorrectIndex === null) return;
+
+    const isCorrect = Number(index) === Number(currentCorrectIndex);
+    UI.markAnswerChoice(index, isCorrect);
+
+    if (isCorrect) {
+      answerSubmitted = true;
+      Game.setGameActive(false);
+      if (!Network.send('CORRECT_ANSWER')) {
+        answerSubmitted = false;
+        UI.showToast('答案未能送出，請重新整理', '📡', 2500);
+      }
+    } else if (!Network.send('WRONG_ANSWER')) {
+      UI.showToast('答案未能送出，請重新整理', '📡', 2500);
+    }
+  }
+
   function handleCorrectAnswer() {
+    if (answerSubmitted) return;
+    answerSubmitted = true;
+    UI.lockAnswerChoices(currentCorrectIndex);
     Network.send('CORRECT_ANSWER');
   }
 
