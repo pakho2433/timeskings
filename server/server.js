@@ -1,7 +1,6 @@
 /**
  * server.js
- * Node.js + Express + WebSocket 伺服器
- * 負責房間管理、多人位置同步與對戰計分
+ * Node.js + Express + WebSocket：10 關熊仔乘法跑酷競賽
  */
 
 const express = require('express');
@@ -16,11 +15,9 @@ const {
   getRoomInfo,
 } = require('./roomManager');
 const {
-  generateLevel,
-  getPlacementPoints,
-  buildLeaderboard,
-  TOTAL_LEVELS,
-  WRONG_ANSWER_PENALTY,
+  generateCourse,
+  buildRaceLeaderboard,
+  TOTAL_STAGES,
 } = require('./gameLogic');
 
 const app = express();
@@ -49,59 +46,20 @@ function sendToPlayer(playerId, message) {
   }
 }
 
-function startLevel(room) {
-  if (!room || room.gameState !== 'playing' || room.players.size === 0) return;
-
-  room.transitionScheduled = false;
-  room.currentLevel++;
-  room.completedPlayers = new Set();
-  room.levelData = generateLevel(room.currentLevel);
-
-  for (const player of room.players.values()) {
-    player.hasCompleted = false;
-    player.lastPlacement = null;
-  }
-
-  broadcastToRoom(room, {
-    type: 'LEVEL_START',
-    level: room.currentLevel,
-    levelData: room.levelData,
-    roomInfo: getRoomInfo(room),
-  });
+function allRemainingPlayersFinished(room) {
+  const players = [...room.players.values()];
+  return players.length > 0 && players.every((player) => player.isFinished);
 }
 
-function checkAllCompleted(room) {
-  const activePlayers = [...room.players.keys()];
-  return activePlayers.length > 0 && activePlayers.every((pid) => room.completedPlayers.has(pid));
-}
-
-function finishGame(room) {
+function finishRace(room) {
   if (!room || room.gameState !== 'playing') return;
-
   room.gameState = 'finished';
-  room.transitionScheduled = false;
-  const elapsed = Math.floor((Date.now() - room.startTime) / 1000);
-  const leaderboard = buildLeaderboard(room.players.values());
 
   broadcastToRoom(room, {
     type: 'GAME_COMPLETED',
-    totalTime: elapsed,
-    missCount: room.missCount,
-    leaderboard,
-    winner: leaderboard[0] || null,
+    totalTime: Math.floor((Date.now() - room.startTime) / 1000),
+    leaderboard: buildRaceLeaderboard(room.players.values()),
   });
-}
-
-function completeRound(room) {
-  if (!room || room.transitionScheduled || !checkAllCompleted(room)) return;
-
-  if (room.currentLevel >= TOTAL_LEVELS) {
-    finishGame(room);
-    return;
-  }
-
-  room.transitionScheduled = true;
-  setTimeout(() => startLevel(room), 2000);
 }
 
 wss.on('connection', (ws) => {
@@ -113,7 +71,7 @@ wss.on('connection', (ws) => {
     let msg;
     try {
       msg = JSON.parse(rawData);
-    } catch (e) {
+    } catch (error) {
       return;
     }
 
@@ -157,19 +115,22 @@ wss.on('connection', (ws) => {
 
         room.gameState = 'playing';
         room.startTime = Date.now();
-        room.missCount = 0;
-        room.currentLevel = 0;
-        room.transitionScheduled = false;
+        room.courseData = generateCourse();
+        room.finishOrder = [];
 
         for (const player of room.players.values()) {
-          player.score = 0;
-          player.correctAnswers = 0;
-          player.wrongAnswers = 0;
-          player.hasCompleted = false;
-          player.lastPlacement = null;
+          player.currentStage = 0;
+          player.isFinished = false;
+          player.finishTime = null;
+          player.finishRank = null;
+          player.falls = 0;
         }
 
-        startLevel(room);
+        broadcastToRoom(room, {
+          type: 'COURSE_START',
+          courseData: room.courseData,
+          roomInfo: getRoomInfo(room),
+        });
         break;
       }
 
@@ -186,61 +147,70 @@ wss.on('connection', (ws) => {
           type: 'PLAYER_MOVED',
           playerId,
           position: msg.position,
-          animState: msg.animState,
         }, playerId);
         break;
       }
 
-      case 'WRONG_ANSWER': {
+      case 'PLAYER_STAGE_SUCCESS': {
         const room = getRoomByPlayerId(playerId);
         if (!room || room.gameState !== 'playing') break;
 
         const player = room.players.get(playerId);
-        if (!player || room.completedPlayers.has(playerId)) break;
+        const stageIndex = Number(msg.stageIndex);
+        if (!player || player.isFinished) break;
+        if (!Number.isInteger(stageIndex) || stageIndex !== player.currentStage) break;
+        if (stageIndex < 0 || stageIndex >= TOTAL_STAGES) break;
 
-        room.missCount++;
-        player.wrongAnswers++;
-        player.score = Math.max(0, player.score - WRONG_ANSWER_PENALTY);
-
+        player.currentStage++;
         broadcastToRoom(room, {
-          type: 'PLAYER_MISS',
+          type: 'PLAYER_PROGRESS',
           playerId,
-          penalty: WRONG_ANSWER_PENALTY,
-          score: player.score,
-          missCount: room.missCount,
+          completedStage: stageIndex,
+          currentStage: player.currentStage,
           roomInfo: getRoomInfo(room),
         });
         break;
       }
 
-      case 'CORRECT_ANSWER': {
+      case 'PLAYER_FALL': {
         const room = getRoomByPlayerId(playerId);
         if (!room || room.gameState !== 'playing') break;
 
         const player = room.players.get(playerId);
-        if (!player || room.completedPlayers.has(playerId)) break;
-
-        const placement = room.completedPlayers.size + 1;
-        const points = getPlacementPoints(placement);
-
-        room.completedPlayers.add(playerId);
-        player.hasCompleted = true;
-        player.lastPlacement = placement;
-        player.correctAnswers++;
-        player.score += points;
+        if (!player || player.isFinished) break;
+        player.falls++;
 
         broadcastToRoom(room, {
-          type: 'PLAYER_COMPLETED',
+          type: 'PLAYER_FELL',
           playerId,
-          placement,
-          points,
-          score: player.score,
-          completedCount: room.completedPlayers.size,
-          totalPlayers: room.players.size,
+          stageIndex: player.currentStage,
+          falls: player.falls,
+          roomInfo: getRoomInfo(room),
+        });
+        break;
+      }
+
+      case 'PLAYER_FINISH': {
+        const room = getRoomByPlayerId(playerId);
+        if (!room || room.gameState !== 'playing') break;
+
+        const player = room.players.get(playerId);
+        if (!player || player.isFinished || player.currentStage < TOTAL_STAGES) break;
+
+        player.isFinished = true;
+        player.finishRank = room.finishOrder.length + 1;
+        player.finishTime = Math.floor((Date.now() - room.startTime) / 1000);
+        room.finishOrder.push(playerId);
+
+        broadcastToRoom(room, {
+          type: 'PLAYER_FINISHED',
+          playerId,
+          rank: player.finishRank,
+          finishTime: player.finishTime,
           roomInfo: getRoomInfo(room),
         });
 
-        completeRound(room);
+        if (allRemainingPlayersFinished(room)) finishRace(room);
         break;
       }
 
@@ -268,17 +238,19 @@ wss.on('connection', (ws) => {
           roomInfo: getRoomInfo(room),
         });
 
-        if (room.gameState === 'playing') completeRound(room);
+        if (room.gameState === 'playing' && allRemainingPlayersFinished(room)) {
+          finishRace(room);
+        }
       }
     }
     playerSockets.delete(playerId);
   });
 
-  ws.on('error', (err) => {
-    console.error(`WebSocket error for player ${playerId}:`, err.message);
+  ws.on('error', (error) => {
+    console.error(`WebSocket error for player ${playerId}:`, error.message);
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`乘法王對戰伺服器啟動：http://localhost:${PORT}`);
+  console.log(`熊仔乘法跑酷伺服器啟動：http://localhost:${PORT}`);
 });
