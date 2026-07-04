@@ -1,33 +1,34 @@
 const assert = require('assert');
 const {
-  generateLevel,
-  getPlacementPoints,
-  buildLeaderboard,
-  TOTAL_LEVELS,
-  WRONG_ANSWER_PENALTY,
+  generateStage,
+  generateCourse,
+  buildRaceLeaderboard,
+  TOTAL_STAGES,
+  OPTIONS_PER_STAGE,
 } = require('../server/gameLogic');
 
-assert.strictEqual(TOTAL_LEVELS, 10);
-assert.strictEqual(WRONG_ANSWER_PENALTY, 10);
-assert.deepStrictEqual(
-  [1, 2, 3, 4, 5].map(getPlacementPoints),
-  [100, 70, 50, 30, 0]
-);
+assert.strictEqual(TOTAL_STAGES, 10);
+assert.strictEqual(OPTIONS_PER_STAGE, 3);
 
-for (let levelNumber = 1; levelNumber <= 100; levelNumber++) {
-  const level = generateLevel(levelNumber);
-  assert.ok(level.options.length === 3 || level.options.length === 4);
-  assert.strictEqual(new Set(level.options).size, level.options.length);
-  assert.strictEqual(level.options[level.correctIndex], level.question.answer);
+for (let i = 0; i < 100; i++) {
+  const stage = generateStage(i % TOTAL_STAGES);
+  assert.strictEqual(stage.options.length, 3);
+  assert.strictEqual(new Set(stage.options).size, 3);
+  assert.strictEqual(stage.options[stage.correctIndex], stage.question.answer);
 }
 
-const leaderboard = buildLeaderboard([
-  { id: 'b', name: 'B', color: 2, score: 300, correctAnswers: 8, wrongAnswers: 2, slotIndex: 1 },
-  { id: 'a', name: 'A', color: 1, score: 300, correctAnswers: 9, wrongAnswers: 5, slotIndex: 0 },
-  { id: 'c', name: 'C', color: 3, score: 250, correctAnswers: 10, wrongAnswers: 0, slotIndex: 2 },
+const course = generateCourse();
+assert.strictEqual(course.length, 10);
+assert.deepStrictEqual(course.map((stage) => stage.stageNumber), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+const leaderboard = buildRaceLeaderboard([
+  { id: 'c', name: 'C', color: 3, isFinished: false, finishRank: null, finishTime: null, currentStage: 7, falls: 1, slotIndex: 2 },
+  { id: 'b', name: 'B', color: 2, isFinished: true, finishRank: 2, finishTime: 55, currentStage: 10, falls: 0, slotIndex: 1 },
+  { id: 'a', name: 'A', color: 1, isFinished: true, finishRank: 1, finishTime: 49, currentStage: 10, falls: 2, slotIndex: 0 },
+  { id: 'd', name: 'D', color: 4, isFinished: false, finishRank: null, finishTime: null, currentStage: 5, falls: 0, slotIndex: 3 },
 ]);
 
-assert.deepStrictEqual(leaderboard.map((p) => p.id), ['a', 'b', 'c']);
-assert.deepStrictEqual(leaderboard.map((p) => p.rank), [1, 2, 3]);
+assert.deepStrictEqual(leaderboard.map((player) => player.id), ['a', 'b', 'c', 'd']);
+assert.deepStrictEqual(leaderboard.map((player) => player.rank), [1, 2, 3, 4]);
 
-console.log('gameLogic tests passed');
+console.log('bear race gameLogic tests passed');
