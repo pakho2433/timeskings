@@ -77,16 +77,13 @@
 
   <!-- ===== 遊戲 HUD ===== -->
   <div id="game-hud" style="display:none;">
-    <!-- 題目 -->
     <div id="question-display">
       <div class="level-tag">第 1 關</div>
       <div class="question-text">? × ? = ?</div>
     </div>
 
-    <!-- 玩家完成狀態列 -->
     <div id="player-status-bar"></div>
 
-    <!-- 等待其他玩家 -->
     <div id="waiting-banner">
       <p>等待其他玩家過關...</p>
     </div>
@@ -94,12 +91,10 @@
 
   <!-- ===== 觸控控制層 ===== -->
   <div id="controls-overlay" style="display:none;">
-    <!-- 搖桿 -->
     <div id="joystick-outer">
       <div id="joystick-inner"></div>
     </div>
 
-    <!-- 跳躍按鈕 -->
     <div id="jump-btn">🦘</div>
   </div>
 
@@ -127,10 +122,13 @@
 
 </div><!-- #app -->
 
-<!-- Three.js（CDN） -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
-        integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
-        crossorigin="anonymous"></script>
+<!-- Three.js：移除有問題的 SRI，並提供第二個 CDN 後備 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  if (typeof THREE === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\\/script>');
+  }
+</script>
 
 <!-- 遊戲腳本 -->
 <script src="js/network.js"></script>
