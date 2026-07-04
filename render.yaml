@@ -1,12 +1,14 @@
 services:
   - type: web
     name: timeskings
-    env: node
+    runtime: node
     plan: free
     region: singapore
-    buildCommand: npm install
+    buildCommand: npm install --omit=dev
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 30
     envVars:
-      - key: NODE_VERSION
-        value: 18.20.0
+      - key: NODE_ENV
+        value: production
