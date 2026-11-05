@@ -1,12 +1,12 @@
 {
   "name": "timeskings",
   "version": "1.0.0",
-  "description": "乘法王對戰 (Times King Battle) - 3D 多人乘法競速遊戲",
+  "description": "熊仔乘法跑酷 (Times King Bear Race) - 10 關 3D 多人乘法競速遊戲",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
     "dev": "nodemon server/server.js",
-    "test": "node tests/gameLogic.test.js"
+    "test": "node tests/gameLogic.test.js && node tests/server.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",

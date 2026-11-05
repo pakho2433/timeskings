@@ -50,7 +50,7 @@ function leaveRoom(playerId) {
     if (!room.players.has(playerId)) continue;
 
     room.players.delete(playerId);
-    room.finishOrder = room.finishOrder.filter((id) => id !== playerId);
+    // Keep the finish history so a disconnected finisher's rank is never reused.
 
     if (room.players.size === 0) {
       rooms.delete(code);
